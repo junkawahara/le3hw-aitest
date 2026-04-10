@@ -36,10 +36,14 @@ simple_cpu cpu(
     .halted(cpu_halted)
 );
 
-mem #(.ADDR_WIDTH(8), .INIT_FILE("test.hex")) memory(
-    .clk(clk),
-    .addr(mem_addr), .rdata(mem_rdata),
-    .wdata(mem_wdata), .we(mem_we)
+// ram.v (altsyncram Block RAM, 4096語, run.mif で初期化)
+// シミュレーション時は ram_sim.v を使用
+ram memory(
+    .clock(clk),
+    .address(mem_addr[11:0]),
+    .q(mem_rdata),
+    .data(mem_wdata),
+    .wren(mem_we)
 );
 
 // ---- OUT レジスタ ----

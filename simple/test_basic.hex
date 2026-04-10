@@ -1,0 +1,6 @@
+// LI r0,3 / LI r1,5 / ADD r0,r1 / OUT r0 / HLT
+8003
+8105
+C800
+C0D0
+C0F0

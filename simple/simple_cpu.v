@@ -104,7 +104,16 @@ shifter shift_inst(
 );
 
 // ---- メモリインタフェース (組み合わせ) ----
-assign mem_addr  = (phase == P1) ? pc : dr;
+// 同期RAM対応: アドレスを1フェーズ前に提示する
+//   P5 で次命令アドレス(PC or 分岐先)を提示 → P1 で命令データ取得
+//   P3 で実効アドレスを提示               → P4 で LD データ取得
+//   P4 で DR を提示 + wren=1             → P4→P5 エッジで ST 書込み
+wire [15:0] next_pc_val = (is_b || (is_bcc && branch_taken)) ? dr : pc;
+
+assign mem_addr  = (phase == P3 && (is_load || is_store)) ? alu_result :
+                   (phase == P4 && is_store)               ? dr        :
+                   (phase == P5)                           ? next_pc_val :
+                                                             pc;
 assign mem_wdata = ar;
 assign mem_we    = (phase == P4) && running && is_store;
 

@@ -1,5 +1,5 @@
-// simple_tb.v - SIMPLE/B テストベンチ
-// テストプログラムを実行し、OUT命令の出力と HLT による停止を検証
+// simple_tb.v - SIMPLE/B テストベンチ (同期RAM対応)
+// ram_sim.v の同期RAMモデルを使用して検証
 
 `timescale 1ns / 1ps
 
@@ -24,21 +24,14 @@ simple_cpu cpu(
     .halted(halted)
 );
 
-// ---- メモリ (テスト用小プログラム) ----
-// LI r0,3 / LI r1,5 / ADD r0,r1 / OUT r0 / HLT
-reg [15:0] ram [0:255];
-initial begin
-    ram[0] = 16'h8003; // LI r0, 3
-    ram[1] = 16'h8105; // LI r1, 5
-    ram[2] = 16'hC800; // ADD r0, r1
-    ram[3] = 16'hC0D0; // OUT r0
-    ram[4] = 16'hC0F0; // HLT
-end
-
-assign mem_rdata = ram[mem_addr[7:0]];
-always @(posedge clk) begin
-    if (mem_we) ram[mem_addr[7:0]] <= mem_wdata;
-end
+// ---- 同期RAMモデル (ram.v互換) ----
+ram #(.INIT_FILE("test_basic.hex")) memory(
+    .clock(clk),
+    .address(mem_addr[11:0]),
+    .q(mem_rdata),
+    .data(mem_wdata),
+    .wren(mem_we)
+);
 
 // ---- クロック (20MHz: 周期50ns) ----
 always #25 clk = ~clk;
