@@ -28,6 +28,15 @@ module simple_cpu(
     input  [15:0] in_data,
     output reg [15:0] out_data,
     output reg        out_we,
+    output [3:0]  io_port,    // I/Oポート番号 (d4)
+    output        io_read,    // IN命令実行中 (PH4)
+    output        io_write,   // OUT命令実行中 (PH4)
+    // デバッグポート
+    output [15:0] debug_pc,   // 現在のPC値
+    output [15:0] debug_r0,   // レジスタr0値
+    output [15:0] debug_r1,   // レジスタr1値
+    output [15:0] debug_r2,   // レジスタr2値
+    output [15:0] debug_r3,   // レジスタr3値
     // ステータス
     output        halted
 );
@@ -146,6 +155,18 @@ assign mem_addr  = (phase == PH3 && (is_load || is_store)) ? alu_result :
                                                               pc;
 assign mem_wdata = ar;
 assign mem_we    = (phase == PH3) && running && is_store;
+
+// ---- I/Oポート制御 ----
+assign io_port  = d4;
+assign io_read  = (phase == PH4) && running && is_in;
+assign io_write = (phase == PH4) && running && is_out;
+
+// ---- デバッグポート ----
+assign debug_pc = pc;
+assign debug_r0 = rf.regs[0];
+assign debug_r1 = rf.regs[1];
+assign debug_r2 = rf.regs[2];
+assign debug_r3 = rf.regs[3];
 
 // ---- ステータス ----
 assign halted = ~running;

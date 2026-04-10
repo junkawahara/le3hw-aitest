@@ -1,0 +1,624 @@
+\documentclass[a4paper,11pt]{ltjsarticle}
+\usepackage{geometry}
+\geometry{top=25mm,bottom=25mm,left=25mm,right=25mm}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{longtable}
+\usepackage{array}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{green!50!black},
+  numbers=left, numberstyle=\tiny\color{gray}, numbersep=5pt,
+  frame=single, breaklines=true, tabsize=4, showstringspaces=false, captionpos=b
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{計算機科学実験及演習3 ハードウェア — 機能設計仕様書 (担当B)}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\LARGE 計算機科学実験及演習3 ハードウェア}\\[1cm]
+{\Huge\bfseries 機能設計仕様書}\\[0.5cm]
+{\LARGE タイマ・I/O拡張・7セグ改善・応用プログラム}\\[0.5cm]
+{\Large 担当B — 周辺回路・ソフトウェア設計}\\[3cm]
+\begin{tabular}{rl}
+学籍番号 & （学籍番号を記入） \\[0.5em]
+氏名     & （氏名を記入） \\[0.5em]
+提出日   & 2026年5月8日 \\
+\end{tabular}
+\vfill
+京都大学 工学部情報学科 計算機科学コース
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+
+% ===================================================================
+\section{担当範囲}
+
+本書は担当Bの設計・実装範囲について報告する。
+
+\begin{itemize}
+\item \textbf{タイマモジュール}: ハードウェアタイマカウンタの設計と実装
+\item \textbf{I/Oアドレス空間の拡張}: 複数デバイスを切り替え可能なI/Oポートデコーダの設計
+\item \textbf{7セグメント表示の改善}: 8桁フル表示と表示モード切替
+\item \textbf{応用プログラム}: バブルソートのアセンブリプログラム
+\item \textbf{アセンブラ}: 全命令対応のPythonアセンブラ
+\end{itemize}
+
+担当Aが実装した4サイクルCPUコアおよびISA拡張（BAL/BR/ADDI）の上に、
+本担当の周辺回路・ソフトウェアを統合することで、
+完成度の高いプロセッサシステムを構築する。
+
+
+% ===================================================================
+\section{タイマモジュール}
+
+\subsection{設計方針}
+
+ソフトウェア遅延ループに依存しない正確な時間計測を実現するため、
+ハードウェアタイマカウンタを設計した。
+プリスケーラにより20MHzのクロックを任意の周波数に分周し、
+16ビットカウンタでイベント計数・タイムアウト検出を行う。
+
+\subsection{レジスタマップ}
+
+タイマは3つのレジスタを持ち、I/Oポート2・3経由でアクセスする。
+
+\begin{table}[h]
+\centering
+\caption{タイマレジスタマップ}
+\begin{tabular}{llcl}
+\toprule
+I/Oポート & レジスタ & R/W & 機能 \\
+\midrule
+2 (IN)  & COUNT & R   & 現在のカウント値 (16ビット) \\
+2 (OUT) & CTRL  & W   & 制御レジスタ \\
+3 (IN)  & overflow & R & bit0: カウント到達フラグ (Read-to-Clear) \\
+3 (OUT) & LIMIT & W   & カウント上限値 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{CTRLレジスタのビットフィールド}
+
+\begin{table}[h]
+\centering
+\caption{CTRLレジスタ構成}
+\begin{tabular}{lll}
+\toprule
+ビット & 名前 & 機能 \\
+\midrule
+0     & EN        & 1: カウント動作, 0: 停止 \\
+1     & RESET     & 1: COUNTを0にリセット (ワンショット, 自動クリア) \\
+7:2   & (予約)    & 未使用 \\
+15:8  & PRESCALER & プリスケーラ分周値 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{動作仕様}
+
+\begin{enumerate}
+\item \texttt{CTRL.EN = 1} のとき、プリスケーラカウンタが毎クロック+1される
+\item プリスケーラカウンタが \texttt{CTRL[15:8]} に到達すると0に戻り、
+      メインカウンタ（COUNT）を+1する
+\item COUNT が LIMIT に到達すると:
+  \begin{itemize}
+  \item \texttt{overflow} フラグが1になる
+  \item COUNT が0にリセットされる
+  \end{itemize}
+\item \texttt{overflow} はIN命令でポート3を読み出すと自動クリアされる
+\item \texttt{CTRL.RESET} に1を書くとCOUNTが即座に0になり、
+      次サイクルで自動的にRESETビットがクリアされる
+\end{enumerate}
+
+\subsubsection{プリスケーラによる周波数分周}
+
+カウント周波数は以下の式で決まる:
+
+\[
+f_{\mathrm{count}} = \frac{f_{\mathrm{clk}}}{\mathrm{PRESCALER} + 1} = \frac{20\,\mathrm{MHz}}{\mathrm{PRESCALER} + 1}
+\]
+
+\begin{table}[h]
+\centering
+\caption{プリスケーラ設定例}
+\begin{tabular}{ccl}
+\toprule
+PRESCALER値 & カウント周波数 & 用途 \\
+\midrule
+0   & 20 MHz  & 高精度計測 (50ns分解能) \\
+19  & 1 MHz   & マイクロ秒単位の計測 \\
+199 & 100 kHz & 10$\mu$s分解能、約0.65秒でオーバーフロー \\
+255 & 約78 kHz & 最大分周 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{RTL実装}
+
+\lstinputlisting[language=Verilog,caption={timer.v — タイマモジュール}]{timer.v}
+
+\subsubsection{実装のポイント}
+
+\begin{itemize}
+\item プリスケーラカウンタ（8ビット）とメインカウンタ（16ビット）の2段構成
+\item CTRL.RESETのワンショット動作: 書き込みの次サイクルで自動クリア
+\item overflowフラグのRead-to-Clear:
+      IN命令でポート3を読み出すと\texttt{rd\_overflow}信号が立ち、
+      次サイクルでoverflowが0にクリアされる
+\item 全レジスタは非同期リセット（\texttt{rst\_n}）対応
+\end{itemize}
+
+
+% ===================================================================
+\section{I/Oアドレス空間の拡張}
+
+\subsection{設計方針}
+
+基本設計のIN/OUT命令では単一の入出力先に固定されており、
+複数のI/Oデバイスを接続できない。
+IN/OUT命令の\texttt{d}フィールド下位4ビット（\texttt{I[3:0]}）を
+I/Oポート番号として利用し、最大16デバイスのアドレッシングを可能にする。
+
+\subsection{CPUの変更}
+
+\texttt{simple\_cpu.v}に以下の3つの出力ポートを追加した。
+
+\begin{table}[h]
+\centering
+\caption{追加したCPU出力ポート}
+\begin{tabular}{lll}
+\toprule
+信号名 & 幅 & 機能 \\
+\midrule
+\texttt{io\_port}  & 4 bit & I/Oポート番号 (\texttt{d4} = \texttt{I[3:0]}) \\
+\texttt{io\_read}  & 1 bit & IN命令実行中 (PH4かつIN命令) \\
+\texttt{io\_write} & 1 bit & OUT命令実行中 (PH4かつOUT命令) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{lstlisting}[language=Verilog,caption={I/Oポート信号の生成}]
+assign io_port  = d4;  // I[3:0] をそのまま出力
+assign io_read  = (phase == PH4) && running && is_in;
+assign io_write = (phase == PH4) && running && is_out;
+\end{lstlisting}
+
+これにより、アセンブリ側では \texttt{IN r0, 2} や \texttt{OUT r1, 3} のように
+ポート番号を指定してI/O操作を行える。
+ポート番号0を指定した場合は従来と同じ動作となり、後方互換性が保たれる。
+
+\subsection{I/Oポートマップ}
+
+\begin{table}[h]
+\centering
+\caption{I/Oポートマップ}
+\begin{tabular}{clll}
+\toprule
+ポート & IN (読み出し) & OUT (書き込み) & 備考 \\
+\midrule
+0 & DIPスイッチ A (SW26, 8bit) & 7セグ出力 (下位16bit) & 従来互換 \\
+1 & DIPスイッチ B (SW27, 8bit) & 7セグ出力 (上位16bit) & 8桁拡張用 \\
+2 & タイマ COUNT値             & タイマ CTRL レジスタ    & \\
+3 & タイマ overflow (bit0)     & タイマ LIMIT レジスタ   & \\
+4 & プッシュスイッチ (4bit)    & LED出力 (8bit)          & \\
+5 & ロータリースイッチ (4bit)  & (予約)                  & 表示モード用 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{入力デコーダ}
+
+IN命令実行時、\texttt{io\_port}に応じて適切なデータソースを
+\texttt{in\_data}に接続する。
+
+\begin{lstlisting}[language=Verilog,caption={I/O入力マルチプレクサ}]
+always @(*) begin
+    case (io_port)
+        4'd0:    in_mux = {8'h00, ~sw[7:0]};
+        4'd1:    in_mux = {8'h00, ~sw[15:8]};
+        4'd2:    in_mux = timer_count;
+        4'd3:    in_mux = {15'd0, timer_overflow};
+        4'd4:    in_mux = {12'h000, ~pushsw};
+        4'd5:    in_mux = {12'h000, rotsw};
+        default: in_mux = 16'h0000;
+    endcase
+end
+\end{lstlisting}
+
+\subsection{出力デコーダ}
+
+OUT命令実行時、\texttt{io\_port}に応じて適切なレジスタに書き込む。
+
+\begin{lstlisting}[language=Verilog,caption={I/O出力デコーダ}]
+always @(posedge clk or negedge rst_n) begin
+    if (~rst_n) begin
+        seg_reg_lo <= 16'h0000;
+        seg_reg_hi <= 16'h0000;
+        led        <= 8'h00;
+    end else if (io_write) begin
+        case (io_port)
+            4'd0: seg_reg_lo <= cpu_out_data;
+            4'd1: seg_reg_hi <= cpu_out_data;
+            4'd4: led        <= cpu_out_data[7:0];
+        endcase
+    end
+end
+\end{lstlisting}
+
+タイマのCTRL/LIMITレジスタへの書き込みは、
+タイマモジュール自体の\texttt{we\_ctrl}、\texttt{we\_limit}入力で直接処理される。
+
+
+% ===================================================================
+\section{7セグメント表示の改善}
+
+\subsection{8桁対応}
+
+基本設計では4桁（16ビット）のHEX表示のみであった。
+OUT命令のポート0（下位16ビット）とポート1（上位16ビット）を組み合わせることで、
+8桁（32ビット）のフルHEX表示を実現する。
+
+\subsubsection{桁選択の拡張}
+
+桁選択信号を2ビットから3ビットに拡張し、8桁を巡回させる。
+
+\begin{lstlisting}[language=Verilog,caption={8桁ダイナミック点灯}]
+reg [2:0] dig_sel;  // 0~7 の8桁
+always @(posedge clk or negedge rst_n) begin
+    if (~rst_n)       dig_sel <= 3'd0;
+    else if (disp_en) dig_sel <= dig_sel + 3'd1;
+end
+\end{lstlisting}
+
+分周比は4kHz（DISP\_DIV=5000）を維持し、
+8桁巡回のリフレッシュレートは 4000/8 = 500Hz となる。
+これは人間の目にちらつきとして認識されない十分な周波数である。
+
+\subsection{表示モード切替}
+
+ロータリースイッチの下位2ビットで4つの表示モードを切り替える。
+
+\begin{table}[h]
+\centering
+\caption{7セグ表示モード}
+\begin{tabular}{cl}
+\toprule
+モード & 表示内容 \\
+\midrule
+0 & OUTレジスタ値 (上位16bit + 下位16bit) \\
+1 & PC値 (上位4桁=0000、下位4桁=PC) \\
+2 & レジスタr0\textasciitilde r3の下位8ビット（各2桁 $\times$ 4本 = 8桁） \\
+3 & タイマCOUNT値 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{lstlisting}[language=Verilog,caption={表示データ選択}]
+wire [1:0] disp_mode = rotsw[1:0];
+reg [31:0] disp_data;
+always @(*) begin
+    case (disp_mode)
+        2'd0: disp_data = {seg_reg_hi, seg_reg_lo};
+        2'd1: disp_data = {16'h0000, debug_pc};
+        2'd2: disp_data = {debug_r3[7:0], debug_r2[7:0],
+                           debug_r1[7:0], debug_r0[7:0]};
+        2'd3: disp_data = {16'h0000, timer_count};
+    endcase
+end
+\end{lstlisting}
+
+\subsection{デバッグポート}
+
+表示モード1・2で使用するCPU内部信号（PC、レジスタ値）を外部から観測するため、
+\texttt{simple\_cpu.v}にデバッグポートを追加した。
+
+\begin{lstlisting}[language=Verilog,caption={デバッグポートの実装}]
+output [15:0] debug_pc,
+output [15:0] debug_r0, debug_r1, debug_r2, debug_r3,
+
+assign debug_pc = pc;
+assign debug_r0 = rf.regs[0];  // 階層参照
+assign debug_r1 = rf.regs[1];
+assign debug_r2 = rf.regs[2];
+assign debug_r3 = rf.regs[3];
+\end{lstlisting}
+
+
+% ===================================================================
+\section{応用プログラム: バブルソート}
+
+\subsection{概要}
+
+担当Aが追加したISA拡張命令（ADDI, BAL/BR）と基本命令を活用し、
+メモリ上のデータ配列をバブルソートするプログラムを作成した。
+ソート完了後、結果を昇順にOUT命令で出力する。
+
+\subsection{アルゴリズム}
+
+\begin{enumerate}
+\item メモリアドレス0x80〜0x8Fに16個のテストデータを格納:
+      \{15, 3, 8, 1, 12, 5, 10, 2, 14, 7, 11, 4, 13, 6, 9, 0\}
+\item 外側ループ: \texttt{i = 15} から \texttt{1} まで
+\item 内側ループ: \texttt{j = 0} から \texttt{i-1} まで
+\item \texttt{data[j] > data[j+1]} なら交換
+\item ソート完了後、\texttt{data[0]}〜\texttt{data[15]} を順にOUT
+\end{enumerate}
+
+\subsection{レジスタ割り当て}
+
+\begin{table}[h]
+\centering
+\caption{バブルソートのレジスタ割り当て}
+\begin{tabular}{ll}
+\toprule
+レジスタ & 用途 \\
+\midrule
+r0 & ベースアドレス (0x80固定) \\
+r1 & アドレス計算用一時レジスタ \\
+r2 & 内側ループカウンタ j \\
+r3 & 外側ループ上限 i \\
+r4 & data[j] (比較・交換用) \\
+r5 & data[j+1] (比較・交換用) \\
+r6 & 表示カウンタ / 定数 \\
+r7 & (予備) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{プログラムリスティング}
+
+\begin{lstlisting}[language={},caption={バブルソートプログラム (sort.asm) 抜粋 — ソート本体}]
+; ==== バブルソート ====
+        LI   r3, 15         ; i = 15
+outer:  LI   r2, 0          ; j = 0
+inner:  MOV  r1, r0         ; r1 = ベースアドレス
+        ADD  r1, r2         ; r1 = base + j
+        LD   r4, 0(r1)      ; r4 = data[j]
+        LD   r5, 1(r1)      ; r5 = data[j+1]
+        CMP  r4, r5         ; data[j] - data[j+1]
+        BLE  skip            ; data[j] <= data[j+1] ならスワップ不要
+        ST   r5, 0(r1)      ; swap: data[j] = data[j+1]
+        ST   r4, 1(r1)      ;       data[j+1] = data[j]
+skip:   ADDI r2, 1          ; j++
+        CMP  r2, r3         ; j < i ?
+        BLT  inner           ; yes -> 内側ループ継続
+        ADDI r3, -1         ; i-- (ADDIはフラグ更新)
+        BNE  outer           ; i != 0 -> 外側ループ継続
+\end{lstlisting}
+
+\subsubsection{実装のポイント}
+
+\begin{itemize}
+\item \textbf{ADDI活用}: ループカウンタのインクリメント・デクリメントに
+  ADDI命令を使用し、従来の LI + ADD の2命令を1命令に削減。
+\item \textbf{ADDIのフラグ更新}: 外側ループの終了判定で、
+  \texttt{ADDI r3, -1} が設定するZフラグを直接
+  \texttt{BNE} で参照。i=1のとき ADDI で r3=0 となり Z=1 となるため、
+  BNE が不成立になりループ脱出する。別途 CMP 命令が不要。
+\item \textbf{メモリアクセス}: LD/ST命令のベースレジスタ+変位機能を活用。
+  \texttt{LD r4, 0(r1)} と \texttt{LD r5, 1(r1)} で隣接要素を効率的に読み出す。
+\end{itemize}
+
+\subsection{プログラムサイズと実行サイクル数}
+
+\begin{table}[h]
+\centering
+\caption{バブルソートプログラムの統計}
+\begin{tabular}{ll}
+\toprule
+項目 & 値 \\
+\midrule
+プログラムサイズ   & 58語 (116バイト) \\
+データ初期化部     & 33語 (LI+ST $\times$ 16 + LI r0) \\
+ソート本体         & 15語 \\
+結果表示部         & 10語 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{実行サイクル数の見積もり}
+
+内側ループ1回あたり: 11命令 $\times$ 4サイクル = 44サイクル。
+バブルソートの比較回数: $\sum_{i=1}^{15} i = 120$ 回。
+ソート部の総サイクル数: 約 $120 \times 44 = 5{,}280$ サイクル。
+20MHz動作で約 $264\,\mu$s。
+
+初期化部 (33命令) + 表示部 (最大 $16 \times 7 = 112$ 命令) を含む全体:
+約 $5{,}280 + 132 + 448 = 5{,}860$ サイクル $\approx 293\,\mu$s。
+
+\subsection{シミュレーション結果}
+
+Icarus Verilog によるシミュレーション結果:
+
+\begin{lstlisting}[language={},frame=single,caption={バブルソートのシミュレーション出力}]
+=== Bubble Sort Test ===
+OUT[0] = 0000  OK
+OUT[1] = 0001  OK
+OUT[2] = 0002  OK
+OUT[3] = 0003  OK
+OUT[4] = 0004  OK
+OUT[5] = 0005  OK
+OUT[6] = 0006  OK
+OUT[7] = 0007  OK
+OUT[8] = 0008  OK
+OUT[9] = 0009  OK
+OUT[10] = 000a  OK
+OUT[11] = 000b  OK
+OUT[12] = 000c  OK
+OUT[13] = 000d  OK
+OUT[14] = 000e  OK
+OUT[15] = 000f  OK
+=== CPU Halted (PC=003a, 16 outputs) ===
+=== SORT TEST PASSED ===
+\end{lstlisting}
+
+16個の要素が \texttt{0x0000}〜\texttt{0x000F} の昇順に正しくソートされており、
+プログラムが正常に動作することが確認された。
+
+
+% ===================================================================
+\section{アセンブラ}
+
+\subsection{概要}
+
+SIMPLE プロセッサの全命令（拡張命令BAL/BR/ADDI含む）に対応した
+Pythonアセンブラ（\texttt{simple\_asm.py}）を作成した。
+ラベル、コメント、PC相対分岐のアドレス自動計算をサポートする。
+
+\subsection{対応命令}
+
+\begin{table}[h]
+\centering
+\caption{アセンブラ対応命令一覧}
+\small
+\begin{tabular}{llll}
+\toprule
+分類 & ニーモニック & アセンブラ記法 & エンコーディング \\
+\midrule
+演算   & ADD, SUB, AND, OR & \texttt{ADD Rd, Rs} & 形式(a) \\
+       & XOR, CMP, MOV    & \texttt{CMP Rd, Rs} & \\
+シフト & SLL, SLR, SRL, SRA & \texttt{SLL Rd, d} & 形式(a) \\
+入出力 & IN, OUT           & \texttt{IN Rd, port} / \texttt{OUT Rs, port} & 形式(a) \\
+停止   & HLT               & \texttt{HLT} & 形式(a) \\
+\midrule
+メモリ & LD, ST            & \texttt{LD Ra, d(Rb)} & 形式(b) \\
+\midrule
+即値   & LI                & \texttt{LI Rb, imm} & 形式(c) \\
+分岐   & B                 & \texttt{B label} & 形式(c) \\
+       & BE, BLT, BLE, BNE & \texttt{BLT label} & 形式(d) \\
+\midrule
+拡張   & BAL               & \texttt{BAL Rb, label} & 形式(c), op2=001 \\
+       & BR                & \texttt{BR Rb} & 形式(c), op2=010 \\
+       & ADDI              & \texttt{ADDI Rb, imm} & 形式(c), op2=011 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{アセンブラの機能}
+
+\begin{itemize}
+\item \textbf{2パスアセンブル}: パス1でラベルアドレスを収集し、パス2で機械語を生成
+\item \textbf{ラベル}: 任意の識別子にコロンを付けてラベル定義（例: \texttt{loop:}）
+\item \textbf{コメント}: セミコロン以降を無視（例: \texttt{; コメント}）
+\item \textbf{PC相対自動計算}: 分岐命令（B, Bcc, BAL）ではラベルからPC相対変位を自動計算
+\item \textbf{I/Oポート}: IN/OUT命令で第2オペランドにポート番号を指定可能
+  （省略時はポート0）
+\item \textbf{リスティング出力}: \texttt{-l} オプションでアドレス・機械語・ソースの対応表を表示
+\item \textbf{数値リテラル}: 10進数、16進数（0x接頭辞）、2進数（0b接頭辞）に対応
+\end{itemize}
+
+\subsection{使用方法}
+
+\begin{lstlisting}[language={},caption={アセンブラの使用例}]
+$ python3 simple_asm.py sort.asm -o sort.hex -l
+0000: 8080  LI   r0, 0x80       ; base address
+0001: 810F  LI   r1, 15
+0002: 4800  ST   r1, 0(r0)
+...
+0039: C0F0  HLT
+assemble ok: 58 words -> sort.hex
+\end{lstlisting}
+
+
+% ===================================================================
+\section{動作検証}
+
+\subsection{テスト環境}
+
+\begin{table}[h]
+\centering
+\caption{テスト環境}
+\begin{tabular}{ll}
+\toprule
+項目 & 内容 \\
+\midrule
+シミュレータ & Icarus Verilog 11.0 \\
+テストベンチ & \texttt{simple\_tb.v} (\texttt{TEST\_MODE} パラメータで切替) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{ISA全命令テスト}
+
+担当Aのテストプログラム（\texttt{test\_all.hex}）により、
+CPU変更（I/Oポート出力追加）後も全命令が正常に動作することを確認した。
+
+\begin{lstlisting}[language={},frame=single,caption={ISAテスト結果}]
+=== 4-Cycle CPU + ISA Extension Test ===
+OUT[0] = 0008  OK
+OUT[1] = 0003  OK
+OUT[2] = 000a  OK
+OUT[3] = 0014  OK
+OUT[4] = ffff  OK
+=== CPU Halted (PC=0012, 5 outputs) ===
+=== ALL TESTS PASSED ===
+\end{lstlisting}
+
+\subsection{バブルソートテスト}
+
+\texttt{sort.hex} によるバブルソートテストでは、
+16個の無作為な初期データが昇順に正しくソートされることを確認した
+（第5節のシミュレーション結果を参照）。
+
+\subsection{テストベンチの設計}
+
+テストベンチはプリプロセッサマクロ（\texttt{TEST\_MODE}, \texttt{INIT\_FILE}）で
+テスト対象を切り替える設計とした。
+
+\begin{lstlisting}[language={},caption={テストの実行コマンド}]
+# ISA全命令テスト
+iverilog -o sim.out simple_tb.v simple_cpu.v alu.v \
+    shifter.v regfile.v ram_sim.v && vvp sim.out
+
+# バブルソートテスト
+iverilog -DTEST_MODE=1 -DINIT_FILE=\"sort.hex\" -o sim.out \
+    simple_tb.v simple_cpu.v alu.v shifter.v regfile.v \
+    ram_sim.v && vvp sim.out
+\end{lstlisting}
+
+
+% ===================================================================
+\section{まとめ}
+
+担当Bとして、以下の設計・実装を完了した。
+
+\begin{enumerate}
+\item \textbf{タイマモジュール}: プリスケーラ付き16ビットハードウェアタイマを設計。
+  20MHzクロックを最大256分周し、カウント到達によるoverflowフラグ機能を実装。
+
+\item \textbf{I/Oアドレス空間拡張}: IN/OUT命令の\texttt{d[3:0]}フィールドを
+  I/Oポート番号として利用し、6ポートのデバイスマッピングを実現。
+  CPUへの変更は出力信号3本の追加のみで、後方互換性を維持。
+
+\item \textbf{7セグメント表示改善}: 4桁から8桁への拡張と、
+  ロータリースイッチによる4モード表示切替（OUTレジスタ/PC/汎用レジスタ/タイマ）を実装。
+
+\item \textbf{応用プログラム}: ADDI命令とLD/ST命令を活用したバブルソートプログラムを作成。
+  16要素のソートが58語のプログラムで実現でき、シミュレーションで正常動作を確認。
+
+\item \textbf{アセンブラ}: 全命令対応のPythonアセンブラを作成。
+  ラベル・コメント・PC相対分岐の自動計算をサポートし、
+  アセンブリプログラムの開発効率を大幅に向上。
+\end{enumerate}
+
+担当Aの4サイクルCPU・ISA拡張と統合することで、
+タイマによる正確な時間計測、複数I/Oデバイスの接続、
+デバッグ支援機能を備えた実用的なプロセッサシステムが完成した。
+
+\end{document}

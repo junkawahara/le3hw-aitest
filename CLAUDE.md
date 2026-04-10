@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-京都大学 計算機科学実験及演習3 ハードウェア (le3hw) の課題リポジトリ。Verilog HDLによるFPGA設計。
+京都大学 計算機科学実験及演習3 ハードウェア (le3hw) の課題リポジトリ。Verilog HDLによるFPGA設計。課題については https://isle3hw.kuis.kyoto-u.ac.jp/ を参照。
 
 - **Target**: PowerMedusa MU500-RX/RK (Altera Cyclone IV EP4CE30F23I7N)
 - **CAD**: Intel Quartus Prime 20.1 Standard Edition
