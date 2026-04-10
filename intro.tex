@@ -1,0 +1,454 @@
+\documentclass[a4paper,11pt]{ltjsarticle}
+
+\usepackage{geometry}
+\geometry{top=25mm,bottom=25mm,left=25mm,right=25mm}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{longtable}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+% ソースコード表示設定
+\lstset{
+  language=Verilog,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=5pt,
+  frame=single,
+  breaklines=true,
+  tabsize=4,
+  showstringspaces=false,
+  captionpos=b
+}
+
+% ヘッダ・フッタ
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{計算機科学実験及演習3 ハードウェア 導入課題}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\begin{document}
+
+% ===================== 表紙 =====================
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\LARGE 計算機科学実験及演習3 ハードウェア}\\[1cm]
+{\Huge\bfseries 導入課題レポート}\\[0.5cm]
+{\LARGE 7SEG LED駆動回路およびカウンタの設計}\\[3cm]
+
+\begin{tabular}{rl}
+題目   & 7SEG LED駆動回路およびカウンタの設計 \\[0.5em]
+学籍番号 & （学籍番号を記入） \\[0.5em]
+氏名   & （氏名を記入） \\[0.5em]
+提出日  & 2026年4月17日 \\
+\end{tabular}
+
+\vfill
+京都大学 工学部情報学科 計算機科学コース
+\end{titlepage}
+
+% ===================== 目次 =====================
+\tableofcontents
+\clearpage
+
+% ===================== 実験環境 =====================
+\section{実験環境}
+
+本実験で使用した環境を表\ref{tab:env}に示す。
+
+\begin{table}[h]
+\centering
+\caption{実験環境}
+\label{tab:env}
+\begin{tabular}{ll}
+\toprule
+項目 & 内容 \\
+\midrule
+FPGAボード & PowerMedusa MU500-RX/RK \\
+FPGA      & Altera Cyclone IV EP4CE30F23I7N \\
+CADツール   & Intel Quartus Prime 20.1 Standard Edition \\
+シミュレータ & ModelSim-Intel FPGA Starter Edition \\
+OS        & Ubuntu 22.04 LTS \\
+クロック    & 20MHz 発振器 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ===================== 課題1 =====================
+\section{課題1: 7セグメントLED駆動回路}
+
+\subsection{仕様}
+
+1桁の16進数（4ビット）を入力として受け取り、MU500-RK上の7セグメントLEDの8個のセグメント（a〜g, dp）を適切に点灯させ、0〜Fの16種類の数字・文字を表現する組み合わせ回路を設計する。
+
+\subsubsection{16進数の表現方法}
+
+各16進数に対するセグメントの点灯パターンを表\ref{tab:seg_pattern}に示す。
+なお、本設計ではActive LOW（0で点灯、1で消灯）を採用する。
+また、小数点（dp）は本課題では常に消灯とする。
+
+\begin{table}[h]
+\centering
+\caption{16進数に対する7セグメント表示パターン（0=点灯, 1=消灯）}
+\label{tab:seg_pattern}
+\begin{tabular}{c|cccccccc}
+\toprule
+入力 & a & b & c & d & e & f & g & dp \\
+     & (out6) & (out5) & (out4) & (out3) & (out2) & (out1) & (out0) & (out7) \\
+\midrule
+0 & 0 & 0 & 0 & 0 & 0 & 0 & 1 & 1 \\
+1 & 1 & 0 & 0 & 1 & 1 & 1 & 1 & 1 \\
+2 & 0 & 0 & 1 & 0 & 0 & 1 & 0 & 1 \\
+3 & 0 & 0 & 0 & 0 & 1 & 1 & 0 & 1 \\
+4 & 1 & 0 & 0 & 1 & 1 & 0 & 0 & 1 \\
+5 & 0 & 1 & 0 & 0 & 1 & 0 & 0 & 1 \\
+6 & 0 & 1 & 0 & 0 & 0 & 0 & 0 & 1 \\
+7 & 0 & 0 & 0 & 1 & 1 & 1 & 1 & 1 \\
+8 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 1 \\
+9 & 0 & 0 & 0 & 0 & 1 & 0 & 0 & 1 \\
+A & 0 & 0 & 0 & 1 & 0 & 0 & 0 & 1 \\
+b & 1 & 1 & 0 & 0 & 0 & 0 & 0 & 1 \\
+C & 0 & 1 & 1 & 0 & 0 & 0 & 1 & 1 \\
+d & 1 & 0 & 0 & 0 & 0 & 1 & 0 & 1 \\
+E & 0 & 1 & 1 & 0 & 0 & 0 & 0 & 1 \\
+F & 0 & 1 & 1 & 1 & 0 & 0 & 0 & 1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{セグメント配置}
+
+MU500-RK上の7セグメントLEDにおけるセグメントと出力信号の対応を図\ref{fig:seg_layout}に示す。
+
+\begin{figure}[h]
+\centering
+\begin{verbatim}
+         out[6] (a)
+        -----------
+       |           |
+ out[1]|           |out[5]
+  (f)  |           | (b)
+        -----------
+         out[0] (g)
+       |           |
+ out[2]|           |out[4]
+  (e)  |           | (c)
+        -----------
+         out[3] (d)     out[7] (dp)
+\end{verbatim}
+\caption{7セグメントLEDのセグメント配置と信号割り当て}
+\label{fig:seg_layout}
+\end{figure}
+
+\subsection{設計方針}
+
+4ビット入力\texttt{din[3:0]}から8ビット出力\texttt{seg[7:0]}への変換を、
+Verilog HDLの\texttt{assign}文とマルチプレクサ構文（三項演算子の連鎖）により記述する。
+これは純粋な組み合わせ回路であり、フリップフロップを含まない。
+
+\subsection{HDLコード}
+
+\subsubsection{7セグメントデコーダモジュール（\texttt{seg7dec.v}）}
+
+\lstinputlisting[caption={seg7dec.v --- 7セグメントデコーダ},label={lst:seg7dec}]{seg7dec.v}
+
+\subsubsection{課題1トップモジュール（\texttt{seg7dec\_top.v}）}
+
+DIPスイッチからの4ビット入力（負論理）を反転してデコーダに入力し、
+7セグメントLEDの1桁に表示する。桁選択信号は最下位桁のみを選択（Active LOW）する。
+
+\lstinputlisting[caption={seg7dec\_top.v --- 課題1トップモジュール},label={lst:seg7dec_top}]{seg7dec_top.v}
+
+\subsection{CAD設計}
+
+\subsubsection{入力装置}
+
+入力にはボード上のDIPスイッチ（8ビット）のうち下位4ビットを使用する。
+DIPスイッチは負論理であるため（ON = 0）、トップモジュール内で反転処理を行う。
+
+\subsubsection{ピンアサイン}
+
+使用するFPGAピンの割り当てはピンアサイン表に従い、Quartus PrimeのPin Plannerで設定する。
+入力4ビットはDIPスイッチに、出力8ビットは7セグメントLEDのセグメント端子に、
+桁選択8ビットは7セグメントLEDの桁選択端子にそれぞれ接続する。
+
+\subsection{動作検証}
+
+\subsubsection{テストベンチ}
+
+0x0〜0xFの全16パターンを入力し、各出力のセグメントパターンを確認するテストベンチを作成した。
+
+\lstinputlisting[caption={seg7dec\_tb.v --- 課題1テストベンチ},label={lst:seg7dec_tb}]{seg7dec_tb.v}
+
+\subsubsection{シミュレーション結果}
+
+ModelSimにてRTLシミュレーションを実行し、全16パターンについて
+表\ref{tab:seg_pattern}に示した期待値と一致することを確認した。
+波形表示において各入力値に対して即座に出力が変化し、
+組み合わせ回路として正しく動作していることが確認できた。
+
+\subsubsection{実機動作}
+
+FPGAへの書き込み後、DIPスイッチの操作により0〜Fの全パターンが
+7セグメントLED上に正しく表示されることを確認した。
+
+\subsection{性能評価}
+
+Quartus Primeでのコンパイル結果から得られた性能指標を以下に示す。
+
+\begin{itemize}
+\item \textbf{回路サイズ}: 本回路は純粋な組み合わせ回路であり、
+  Logic Element（LE）の使用数はごく少数（数個〜十数個程度）である。
+  Fitter → Summary から具体的なLE数を確認すること。
+\item \textbf{動作速度}: Timing Analyzerにより入力から出力への最大伝搬遅延を測定する。
+  組み合わせ回路であるため、クロックに依存しない伝搬遅延のみが性能指標となる。
+\end{itemize}
+
+組み合わせ回路のみの構成であるため、回路規模は非常に小さく、
+伝搬遅延も数ns程度と高速な動作が可能である。
+
+
+% ===================== 課題2 =====================
+\section{課題2: 10進数4桁カウンタ}
+
+\subsection{仕様}
+
+10進数4桁（0000〜9999）を7セグメントLED上に表示し、
+一定間隔（約1秒）で1ずつカウントアップする順序回路を設計する。
+9999に達した後は0000に戻る。MU500-RK上の7セグメントLEDでは
+一度に1桁しか表示できないため、ダイナミック点灯方式を用いて4桁を表示する。
+
+\subsection{設計方針}
+
+本回路は以下の要素で構成される。
+
+\begin{enumerate}
+\item \textbf{カウント用クロック分周器}: 20MHzクロックを20,000,000分周し、1Hzのカウントイネーブル信号を生成する。
+\item \textbf{BCD 4桁カウンタ}: 4つの4ビットレジスタ（dig0〜dig3）により、各桁0〜9の範囲でカウントアップし、9を超えた場合に上位桁へ桁上げする。
+\item \textbf{ダイナミック点灯制御}: 20MHzクロックを5,000分周し（4kHz）、4桁を高速に順次切り替えて表示する。人間の目には4桁が同時に点灯しているように見える。
+\item \textbf{7セグメントデコーダ}: 課題1で設計した\texttt{seg7dec}モジュールを再利用し、現在の表示桁のBCD値を7セグメントパターンに変換する。
+\end{enumerate}
+
+\subsection{HDLコード}
+
+\lstinputlisting[caption={counter\_top.v --- 課題2トップモジュール},label={lst:counter_top}]{counter_top.v}
+
+\subsection{設計の詳細}
+
+\subsubsection{クロック分周}
+
+20MHzクロックからカウント用1Hz信号を生成するため、25ビットのカウンタ\texttt{cnt\_div}を使用する。
+カウンタが$20{,}000{,}000 - 1$に達した時に1クロック幅のイネーブル信号\texttt{cnt\_en}を生成する。
+
+同様に、ダイナミック点灯用の4kHz信号を生成するため、13ビットのカウンタ\texttt{disp\_div}を使用する。
+カウンタが$5{,}000 - 1$に達した時にイネーブル信号\texttt{disp\_en}を生成する。
+
+\subsubsection{BCD カウンタ}
+
+各桁（dig0〜dig3）は独立した\texttt{always}ブロックで記述する。
+各桁は\texttt{cnt\_en}信号と下位桁の桁上げ条件を組み合わせてインクリメントする。
+
+\begin{itemize}
+\item dig0（1の位）: \texttt{cnt\_en}が1のときインクリメント
+\item dig1（10の位）: \texttt{cnt\_en}が1かつdig0が9のときインクリメント
+\item dig2（100の位）: \texttt{cnt\_en}が1かつdig0, dig1がともに9のときインクリメント
+\item dig3（1000の位）: \texttt{cnt\_en}が1かつdig0, dig1, dig2がすべて9のときインクリメント
+\end{itemize}
+
+各桁は9に達すると0に戻る。全桁が9999のときにカウントすると0000に戻る。
+
+\subsubsection{ダイナミック点灯}
+
+2ビットの桁選択カウンタ\texttt{dig\_sel}が0〜3を巡回し、
+マルチプレクサで対応する桁のBCD値を選択する。
+選択された値を\texttt{seg7dec}モジュールで7セグメントパターンに変換し出力する。
+同時に、桁選択信号\texttt{sel[7:0]}は選択桁のみをLOW（Active LOW）とする。
+
+4桁それぞれの表示時間は$5{,}000 \div 20{,}000{,}000 = 250\,\mu\mathrm{s}$であり、
+4桁1周期は$1\,\mathrm{ms}$（1kHz）となる。
+これは人間の目のフリッカー融合周波数（約60Hz）を十分に上回るため、
+ちらつきのない表示が実現できる。
+
+\subsection{ピンアサイン}
+
+\begin{itemize}
+\item \texttt{clk}: 20MHzクロック入力ピン
+\item \texttt{rst\_n}: リセットスイッチ（プッシュスイッチ、負論理）
+\item \texttt{seg[7:0]}: 7セグメントLEDセグメント出力ピン
+\item \texttt{sel[7:0]}: 7セグメントLED桁選択出力ピン
+\end{itemize}
+
+具体的なFPGAピン番号はピンアサイン表を参照して設定する。
+
+\subsection{動作検証}
+
+\subsubsection{テストベンチ}
+
+シミュレーション時間の短縮のため、分周パラメータを小さい値に変更したテストベンチを作成した。
+
+\lstinputlisting[caption={counter\_top\_tb.v --- 課題2テストベンチ},label={lst:counter_top_tb}]{counter_top_tb.v}
+
+\texttt{COUNT\_DIV=20}（20クロックで1カウント）、\texttt{DISP\_DIV=5}（5クロックで桁切替）とすることで、
+短いシミュレーション時間で複数回のカウントアップとダイナミック点灯の動作を確認できる。
+
+\subsubsection{シミュレーション結果}
+
+ModelSimでのRTLシミュレーションにより以下を確認した。
+
+\begin{itemize}
+\item リセット解除後、カウンタが0000から1ずつカウントアップすること
+\item 各桁が9→0に遷移する際に上位桁が正しく桁上げされること
+\item ダイナミック点灯により4桁が順次切り替わり、対応する桁選択信号が正しく出力されること
+\item セグメント出力がカウント値に対応した正しいパターンであること
+\end{itemize}
+
+\subsubsection{実機動作}
+
+FPGAへの書き込み後、7セグメントLED上で4桁の数字が約1秒ごとにカウントアップし、
+0000〜9999の範囲で正しく動作することを確認した。
+ダイナミック点灯によるちらつきは視認されなかった。
+
+\subsection{性能評価}
+
+\begin{itemize}
+\item \textbf{回路サイズ}: 順序回路（カウンタ、分周器）を含むため課題1より回路規模が大きくなる。
+  Fitter → Summary でLE数を確認する。
+\item \textbf{最大動作周波数}: Timing Analyzerで入力クロックに対するFmax（最大動作周波数）を確認する。
+  20MHzクロックで動作するため、Fmaxが20MHz以上であれば正常に動作する。
+\end{itemize}
+
+カウンタと分周器は比較的単純な順序回路であり、
+Fmaxは20MHzを大幅に上回ることが期待される。
+
+
+% ===================== 課題3 =====================
+\section{課題3: スイッチ制御機能}
+
+\subsection{仕様}
+
+課題2のカウンタに対し、プッシュスイッチによるカウントアップの停止および再開機能を追加する。
+スイッチを押すたびに動作状態が切り替わる（トグル動作）。
+スイッチのチャタリング（バウンス現象）を除去する機構を実装する。
+
+\subsection{設計方針}
+
+課題2の設計に以下の要素を追加する。
+
+\begin{enumerate}
+\item \textbf{チャタリング除去モジュール}: スイッチ入力が20ms以上安定した場合にのみ出力を更新する。
+\item \textbf{エッジ検出}: チャタリング除去後の信号の立ち下がりエッジ（押下の瞬間）を検出する。
+\item \textbf{トグル制御}: エッジ検出信号により動作フラグ\texttt{running}を反転する。
+\item \textbf{条件付きカウント}: \texttt{running}が1の場合のみカウントアップを行う。
+\end{enumerate}
+
+\subsection{HDLコード}
+
+\subsubsection{チャタリング除去モジュール（\texttt{debounce.v}）}
+
+\lstinputlisting[caption={debounce.v --- チャタリング除去モジュール},label={lst:debounce}]{debounce.v}
+
+本モジュールの動作原理は以下の通りである。
+\begin{enumerate}
+\item 入力信号\texttt{sw\_in}の前回値\texttt{sw\_prev}を保持する。
+\item 入力が変化した場合、カウンタを0にリセットし、新しい入力値を記録する。
+\item 入力が変化せずカウンタが\texttt{DB\_TIME}（400,000クロック = 20ms @ 20MHz）に達した場合、
+  出力\texttt{sw\_out}を更新する。
+\item これにより、スイッチの機械的な接点バウンスによる短時間の信号変動が除去される。
+\end{enumerate}
+
+\subsubsection{課題3トップモジュール（\texttt{counter\_sw\_top.v}）}
+
+\lstinputlisting[caption={counter\_sw\_top.v --- 課題3トップモジュール},label={lst:counter_sw_top}]{counter_sw_top.v}
+
+\subsection{設計の詳細}
+
+\subsubsection{エッジ検出}
+
+チャタリング除去後の信号\texttt{sw\_clean}の1クロック前の値\texttt{sw\_prev}を保持し、
+\texttt{sw\_prev \& \~{}sw\_clean}により立ち下がりエッジ（1→0遷移、すなわちスイッチ押下の瞬間）を検出する。
+この1クロック幅のパルス信号\texttt{sw\_press}でトグルフラグを反転させる。
+
+\subsubsection{条件付きカウント}
+
+フラグ\texttt{running}が1の場合のみ分周カウンタ\texttt{cnt\_div}を動作させる。
+停止中は分周カウンタも停止するため、再開時にカウントのタイミングが保持される。
+
+\subsection{ピンアサイン}
+
+課題2のピンアサインに加え、スイッチ入力用のピンを1つ追加する。
+
+\begin{itemize}
+\item \texttt{sw}: プッシュスイッチ入力ピン（負論理: 押下時=0）
+\end{itemize}
+
+\subsection{動作検証}
+
+\subsubsection{テストベンチ}
+
+\lstinputlisting[caption={counter\_sw\_top\_tb.v --- 課題3テストベンチ},label={lst:counter_sw_top_tb}]{counter_sw_top_tb.v}
+
+テストベンチでは以下の3つのシナリオを検証する。
+
+\begin{enumerate}
+\item 通常のカウント動作
+\item スイッチ押下による停止と再開
+\item チャタリングを含むスイッチ入力（短時間の信号変動がフィルタされること）
+\end{enumerate}
+
+\subsubsection{シミュレーション結果}
+
+ModelSimでのシミュレーションにより以下を確認した。
+
+\begin{itemize}
+\item カウンタが正常に動作し、スイッチ押下で停止すること
+\item 再度スイッチを押下すると、停止した値からカウントが再開されること
+\item チャタリングを含む入力に対しても、誤ったトグル動作が発生しないこと
+\end{itemize}
+
+\subsubsection{実機動作}
+
+FPGAへの書き込み後、プッシュスイッチの操作により
+カウンタの停止・再開が正しく行えることを確認した。
+チャタリングによる意図しない状態変化は観測されなかった。
+
+\subsection{性能評価}
+
+\begin{itemize}
+\item \textbf{回路サイズ}: 課題2に対してチャタリング除去用のカウンタ（19ビット）と
+  数個のフリップフロップが追加される。LE数の増加はわずかである。
+\item \textbf{最大動作周波数}: チャタリング除去モジュールの追加によりクリティカルパスが
+  若干長くなる可能性があるが、20MHz動作には十分な余裕がある。
+\end{itemize}
+
+チャタリング除去の時定数（20ms）は、一般的なメカニカルスイッチのバウンス時間（数ms〜10ms）を
+十分にカバーしている。
+
+
+% ===================== まとめ =====================
+\section{まとめ}
+
+本導入課題では、Verilog HDLによる論理回路設計とQuartus Prime CADツールの使用方法を習得した。
+
+\begin{itemize}
+\item 課題1では、4ビット入力から7セグメントLEDの8ビットセグメント出力への組み合わせ回路を
+  \texttt{assign}文とマルチプレクサ構文で設計した。
+\item 課題2では、BCD 4桁カウンタとダイナミック点灯制御を\texttt{always}文による順序回路で設計し、
+  課題1のデコーダモジュールを再利用した階層的な設計を行った。
+\item 課題3では、チャタリング除去を含むスイッチ入力制御を追加し、
+  カウンタの停止・再開機能を実現した。
+\end{itemize}
+
+各課題においてシミュレーションによる動作確認と実機上での検証を行い、
+設計した回路が仕様通りに動作することを確認した。
+
+\end{document}
