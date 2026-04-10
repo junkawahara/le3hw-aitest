@@ -1,0 +1,390 @@
+\documentclass[a4paper,11pt]{ltjsarticle}
+\usepackage{geometry}
+\geometry{top=25mm,bottom=25mm,left=25mm,right=25mm}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{amsmath}
+
+\lstset{
+  language=Verilog,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{green!50!black},
+  numbers=left, numberstyle=\tiny\color{gray}, numbersep=5pt,
+  frame=single, breaklines=true, tabsize=4, showstringspaces=false, captionpos=b
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{計算機科学実験及演習3 ハードウェア — 機能設計仕様書 (担当A)}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\LARGE 計算機科学実験及演習3 ハードウェア}\\[1cm]
+{\Huge\bfseries 機能設計仕様書}\\[0.5cm]
+{\LARGE ISA拡張とマイクロアーキテクチャ改良}\\[0.5cm]
+{\Large 担当A — CPUコア設計}\\[3cm]
+\begin{tabular}{rl}
+学籍番号 & （学籍番号を記入） \\[0.5em]
+氏名     & （氏名を記入） \\[0.5em]
+提出日   & 2026年5月8日 \\
+\end{tabular}
+\vfill
+京都大学 工学部情報学科 計算機科学コース
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+% ===================================================================
+\section{担当範囲}
+
+本書は担当Aの設計・実装範囲について報告する。
+
+\begin{itemize}
+\item \textbf{マイクロアーキテクチャ改良}: 5フェーズ順次実行を4フェーズに統合し、全命令を25\%高速化
+\item \textbf{ISA拡張}: BAL（Branch And Link）、BR（Branch Register）、ADDI（Add Immediate）の3命令を追加
+\item \textbf{同期RAM対応}: Quartus生成のBlock RAM (altsyncram) に対応するメモリアクセスタイミングの設計
+\end{itemize}
+
+担当Bの範囲（タイマ、I/Oアドレス拡張、7セグ改善、応用プログラム）については\texttt{plan.md}に詳細仕様を記載した。
+
+% ===================================================================
+\section{4サイクル実行方式}
+
+\subsection{設計方針}
+
+SIMPLE/B（基本設計）では1命令に5フェーズ（p1〜p5）を要する。
+このうちp1（命令フェッチ）とp5（レジスタ書き戻し）はデータパスが独立しているため、
+1つのフェーズに統合できる。
+
+\begin{table}[h]
+\centering
+\caption{フェーズ統合の対応}
+\begin{tabular}{ll|ll}
+\toprule
+\multicolumn{2}{c|}{SIMPLE/B (5フェーズ)} & \multicolumn{2}{c}{改良版 (4フェーズ)} \\
+\midrule
+p1 & 命令フェッチ         & \multirow{2}{*}{PH1} & \multirow{2}{*}{命令フェッチ + 書き戻し} \\
+p5 & レジスタ書き戻し     &                       &                                   \\
+p2 & レジスタ読み出し     & PH2 & レジスタ読み出し \\
+p3 & 演算                 & PH3 & 演算 + ST書込み \\
+p4 & 主記憶アクセス/IO    & PH4 & メモリ読出し / IO / 分岐 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+これにより1命令あたりのサイクル数が5から4に削減され、25\%の性能向上を達成する。
+
+\subsection{パイプラインレジスタによる書き戻し}
+
+PH1で前命令の書き戻しを行うため、書き戻し情報をパイプラインレジスタに保持する。
+
+\begin{table}[h]
+\centering
+\caption{書き戻しパイプラインレジスタ}
+\begin{tabular}{lll}
+\toprule
+信号名 & 幅 & 機能 \\
+\midrule
+\texttt{wb\_rf\_we}   & 1 bit  & レジスタ書き込みイネーブル \\
+\texttt{wb\_rf\_addr} & 3 bit  & 書き込み先レジスタ番号 \\
+\texttt{wb\_rf\_data} & 16 bit & 書き込みデータ（DR, PC等） \\
+\texttt{wb\_use\_mdr} & 1 bit  & 1ならMDRを使用（LD/IN命令用） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+これらはPH4で設定され、次のPH1でレジスタファイルへの書き込みに使用される。
+
+\subsection{データハザードの回避}
+
+PH1でのレジスタ書き込みはクロックエッジで実行され、
+直後のPH2では更新済みの値が読み出される（レジスタファイルの非同期リードによる）。
+このため、連続する命令間のデータ依存（Read After Write）はハードウェア的に解決され、
+ストールやフォワーディングは不要である。
+
+\subsection{同期RAMとの協調}
+
+Block RAM（altsyncram, \texttt{OUTDATA\_REG\_A = "UNREGISTERED"}）は
+クロックエッジでアドレスをラッチし、その後にデータを出力する。
+このため、データが必要な1フェーズ前にアドレスを提示する。
+
+\begin{table}[h]
+\centering
+\caption{メモリアドレスタイミング}
+\begin{tabular}{lll}
+\toprule
+フェーズ & \texttt{mem\_addr} & 目的 \\
+\midrule
+PH3 & \texttt{alu\_result} & LD/ST用実効アドレス（PH4でデータ取得 / PH3$\to$PH4でST書込み） \\
+PH4 & \texttt{next\_pc}    & 次命令アドレス（PH1で命令取得） \\
+他  & \texttt{pc}（デフォルト） & アイドル中の初期フェッチ等 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+ST命令の書込みはPH3$\to$PH4のクロックエッジで実行される。
+これにより、PH4ではアドレスバスを次命令フェッチ用に使用でき、
+ST命令も他命令と同じ4サイクルで完了する。
+
+\subsection{フェーズ動作の詳細}
+
+\begin{description}
+\item[PH1 (IF+WB)] \mbox{}\\
+  \texttt{ir $\leftarrow$ mem\_rdata}（PH4で提示されたアドレスの命令）、
+  \texttt{pc $\leftarrow$ pc + 1}。
+  レジスタファイルへの書き込みは組み合わせ制御信号\texttt{rf\_we}により、
+  PH1$\to$PH2エッジで実行される。
+
+\item[PH2 (RR)] \mbox{}\\
+  \texttt{ar $\leftarrow$ r[Rs/Ra]}、\texttt{br $\leftarrow$ r[Rd/Rb]}。
+  PH1$\to$PH2エッジでレジスタ書き込みが完了しているため、最新値が読み出される。
+
+\item[PH3 (EX+ST)] \mbox{}\\
+  ALUまたはシフタで演算し、結果を\texttt{dr}に格納。
+  演算命令・ADDI命令では条件コードを更新。
+  ST命令では\texttt{mem\_we=1}とし、PH3$\to$PH4エッジでメモリ書き込みが実行される。
+
+\item[PH4 (MA/IO/Branch)] \mbox{}\\
+  LD命令: \texttt{mdr $\leftarrow$ mem\_rdata}（PH3で提示したアドレスのデータ）。
+  IN/OUT命令: 外部入出力。
+  分岐命令: \texttt{pc $\leftarrow$ dr}。
+  書き戻し情報（\texttt{wb\_*}）をパイプラインレジスタに保存。
+  \texttt{mem\_addr = next\_pc\_val} で次命令アドレスをRAMに提示。
+\end{description}
+
+
+% ===================================================================
+\section{ISA拡張}
+
+\subsection{BAL — Branch And Link}
+
+関数呼び出しを実現する命令。戻りアドレスをレジスタに退避してからジャンプする。
+
+\begin{table}[h]
+\centering
+\caption{BAL命令仕様}
+\begin{tabular}{ll}
+\toprule
+項目 & 内容 \\
+\midrule
+形式       & (c): \texttt{10|001|Rb(3)|d(8)} \\
+ニーモニック & \texttt{BAL Rb, d} \\
+動作       & \texttt{r[Rb] = PC; PC = PC + sign\_ext(d)} \\
+           & ※ PCはフェッチ時に+1済みのため、戻りアドレス = 次命令のアドレス \\
+フラグ     & 変化なし \\
+用途       & サブルーチン呼び出し \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{実装}
+
+ALU入力Aに\texttt{pc}を選択し、\texttt{dr = pc + sign\_ext(d)}で分岐先を計算。
+書き戻しデータには\texttt{pc}（戻りアドレス）を保存する。
+
+\begin{lstlisting}[caption={BAL命令のデータパス選択}]
+// ALU入力: pc + sign_ext(d) → 分岐先
+wire [15:0] alu_a = ... (is_bal) ? pc : ...;
+
+// 書き戻し: r[Rb] = pc (戻りアドレス)
+if (is_bal) wb_rf_data <= pc;
+
+// 分岐: pc ← dr
+if (branch_go) pc <= dr;  // branch_go includes is_bal
+\end{lstlisting}
+
+\subsection{BR — Branch Register}
+
+レジスタの値にジャンプする命令。BALからの復帰に使用する。
+
+\begin{table}[h]
+\centering
+\caption{BR命令仕様}
+\begin{tabular}{ll}
+\toprule
+項目 & 内容 \\
+\midrule
+形式       & (c): \texttt{10|010|Rb(3)|d(8)} \\
+ニーモニック & \texttt{BR Rb} （dは通常0） \\
+動作       & \texttt{PC = r[Rb] + sign\_ext(d)} \\
+フラグ     & 変化なし \\
+用途       & サブルーチンからの復帰、間接ジャンプ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{実装}
+
+ALU入力Aに\texttt{br}（= \texttt{r[Rb]}）を選択。
+\texttt{dr = r[Rb] + sign\_ext(d)}が分岐先となる。
+レジスタ書き込みは不要（\texttt{need\_rf\_write}に含めない）。
+
+\subsection{ADDI — Add Immediate}
+
+レジスタに8ビット符号付き即値を加算する命令。ループカウンタの操作を1命令で行える。
+
+\begin{table}[h]
+\centering
+\caption{ADDI命令仕様}
+\begin{tabular}{ll}
+\toprule
+項目 & 内容 \\
+\midrule
+形式       & (c): \texttt{10|011|Rb(3)|d(8)} \\
+ニーモニック & \texttt{ADDI Rb, d} \\
+動作       & \texttt{r[Rb] = r[Rb] + sign\_ext(d)} \\
+フラグ     & S, Z, C, V を更新 \\
+用途       & カウンタ操作、ポインタ演算 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{実装}
+
+ALU入力Aに\texttt{br}（= \texttt{r[Rb]}）、入力Bに\texttt{sign\_ext(d8)}を選択。
+既存のALU（ADD演算）をそのまま使用。
+条件コードは\texttt{is\_alu\_rr || is\_addi}の条件で更新する。
+
+\subsection{使用例: サブルーチン呼び出し}
+
+\begin{lstlisting}[language={},caption={BAL/BR/ADDIの使用例}]
+; メインルーチン
+        LI   r0, 0       ; カウンタ
+loop:   BAL  r7, func    ; func()呼び出し、r7=戻りアドレス
+        OUT  r0           ; 結果表示
+        ADDI r0, 1        ; r0++ (LI+ADD の2命令が不要)
+        B    loop
+
+; サブルーチン
+func:   LI   r6, 20
+        BR   r7           ; r7のアドレスに復帰
+\end{lstlisting}
+
+
+% ===================================================================
+\section{動作検証}
+
+\subsection{テストプログラム}
+
+5つのテスト項目を1つのプログラムで検証する。
+
+\begin{table}[h]
+\centering
+\caption{テスト項目と期待出力}
+\begin{tabular}{cllc}
+\toprule
+\# & テスト内容 & 使用命令 & 期待OUT \\
+\midrule
+0 & 即値ロード + 加算 & LI, ADD, OUT & 0x0008 \\
+1 & ループ (3回インクリメント) & ADD, CMP, BLT, OUT & 0x0003 \\
+2 & 即値加算 & LI, ADDI, OUT & 0x000A \\
+3 & サブルーチン呼出 & BAL, BR, LI, OUT & 0x0014 \\
+4 & サブルーチン内でのレジスタ変更 & LI, OUT & 0xFFFF \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{シミュレーション結果}
+
+Icarus Verilog 11.0 による実行結果:
+
+\begin{lstlisting}[language={},frame=single,caption={シミュレーション出力}]
+=== 4-Cycle CPU + ISA Extension Test ===
+OUT[0] = 0008  OK
+OUT[1] = 0003  OK
+OUT[2] = 000a  OK
+OUT[3] = 0014  OK
+OUT[4] = ffff  OK
+=== CPU Halted (PC=0012, 5 outputs) ===
+=== ALL TESTS PASSED ===
+\end{lstlisting}
+
+全5テスト項目が期待通りの出力を生成し、CPUが正常に停止した。
+
+\subsection{検証内容の詳細}
+
+\begin{itemize}
+\item \textbf{テスト0}: LI r0,3 + LI r1,5 + ADD → r0=8。基本的なALU動作を確認。
+\item \textbf{テスト1}: r2を0から3までインクリメント。CMP/BLTの条件分岐が正しく動作し、
+  ループが3回で終了することを確認。4サイクル化による分岐タイミングの正常性も検証。
+\item \textbf{テスト2}: LI r5,5 + ADDI r5,5 → r5=10。新命令ADDIの動作確認。
+\item \textbf{テスト3}: BAL r7,3 でサブルーチンにジャンプ（r7に戻りアドレス保存）、
+  BR r7 で復帰。復帰後のOUT r6が正しい値（20）を出力することで、
+  戻りアドレスの保存と復帰が正常であることを確認。
+\item \textbf{テスト4}: サブルーチン内でLI r0,-1を実行した結果（0xFFFF）が
+  復帰後も保持されていることを確認。
+\end{itemize}
+
+
+% ===================================================================
+\section{性能評価}
+
+\subsection{サイクル数の比較}
+
+\begin{table}[h]
+\centering
+\caption{SIMPLE/B vs 改良版の性能比較}
+\begin{tabular}{lcc}
+\toprule
+指標 & SIMPLE/B & 改良版 \\
+\midrule
+命令サイクル数 & 5 & 4 \\
+CPI (Cycles Per Instruction) & 5.0 & 4.0 \\
+スループット (@ 20MHz) & 4 MIPS & 5 MIPS \\
+性能向上率 & --- & +25\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{ISA拡張の効果}
+
+\begin{table}[h]
+\centering
+\caption{ISA拡張による命令数削減の例}
+\begin{tabular}{lcc}
+\toprule
+処理 & 基本ISA & 拡張ISA \\
+\midrule
+\texttt{r0 = r0 + 1} & 2命令 (LI r1,1 + ADD r0,r1) & 1命令 (ADDI r0,1) \\
+関数呼び出し & 不可能 & 2命令 (BAL + BR) \\
+ループカウンタ操作 & 3命令 (LI+ADD+CMP) & 2命令 (ADDI+CMP) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+ADDI命令の追加により、ループカウンタの操作が効率化され、
+典型的なループでは命令数が約33\%削減される。
+4サイクル化と合わせると、ループ性能は基本設計比で約1.5倍に向上する。
+
+
+% ===================================================================
+\section{まとめ}
+
+担当Aとして、以下の設計・実装を完了した。
+
+\begin{enumerate}
+\item \textbf{4サイクル実行方式}: PH1(IF+WB)とPH5の統合により、
+  全命令を4サイクルで実行。データハザードはレジスタファイルの非同期リードにより自然に解決。
+  同期RAM (Block RAM) との協調も実現。
+
+\item \textbf{ISA拡張}: BAL/BR命令によるサブルーチン呼び出し機構、
+  ADDI命令による即値加算を追加。既存命令との互換性を維持。
+
+\item \textbf{検証}: 5項目のテストプログラムにより、基本命令・分岐・新命令の
+  全てが正常に動作することをシミュレーションで確認。
+\end{enumerate}
+
+担当Bが実装するタイマ、I/O拡張、応用プログラムとの統合に向けた
+詳細仕様書(\texttt{plan.md})も作成した。
+
+\end{document}

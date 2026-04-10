@@ -1,0 +1,121 @@
+// 全命令テスト (4サイクルCPU + ISA拡張)
+// 期待出力: OUT=0008, 0003, 000A, 0014(=20), FFFF
+//
+// --- 基本テスト ---
+// 0: LI r0, 3       8003
+// 1: LI r1, 5       8105
+// 2: ADD r0, r1     C800  (r0 = 3+5 = 8)
+// 3: OUT r0         C0D0  (OUT=0008)
+//
+// --- 分岐テスト (r2を3回インクリメント) ---
+// 4: LI r2, 0       8200
+// 5: LI r3, 1       8301
+// 6: LI r4, 3       8403
+// 7: ADD r2, r3     CB00  (loop: r2++)
+// 8: CMP r2, r4     E250  (11_100_010_0101_0000: Rs=r4, Rd=r2)
+// 9: BLT -3         B9FD  (→ addr 7)
+// A: OUT r2         C4D0  (11_010_100_1101_0000: Rs=r2... wait)
+//
+// OUT Rs: Rs=I[13:11]. OUT r2: Rs=010
+// 11_010_000_1101_0000 = C8D0... hmm.
+// Actually OUT rs: I[15:14]=11, I[13:11]=Rs=010, I[10:8]=don't care=000, I[7:4]=1101, I[3:0]=0000
+// = 11_010_000_1101_0000 = 0xD0D0? Let me recalculate.
+// 1101_0000_1101_0000 = 0xD0D0
+// No: 11 | 010 | 000 | 1101 | 0000
+//   = 1_1010_0001_1010_000 ... let me do it bit by bit
+// bits: 11 010 000 1101 0000
+//       15-14: 11
+//       13-11: 010 (Rs=r2)
+//       10-8:  000
+//       7-4:   1101 (OUT)
+//       3-0:   0000
+// = 1101_0000_1101_0000 = 0xD0D0
+//
+// --- ADDI テスト ---
+// B: LI r5, 5       8505
+// C: ADDI r5, 5     9D05  (10_011_101_00000101: op2=011, Rb=r5, d=5 → r5=10)
+//    Wait: Rb=I[10:8]=101=r5. op2=I[13:11]=011.
+//    10_011_101_00000101 = 1001_1101_0000_0101 = 0x9D05
+// D: OUT r5         D4D0  (11_101_000_1101_0000: Rs=r5=101)
+//    = 1110_1000_1101_0000 = 0xE8D0
+//    Wait: 11 | 101 | 000 | 1101 | 0000
+//    = 1110_1000_1101_0000 = 0xE8D0
+//
+// --- BAL/BR テスト ---
+// E: BAL r7, 2      8F02  (10_001_111_00000010: op2=001, Rb=r7, d=2)
+//    r7 = PC = E+1 = F, PC = F + 2 = 11 (→ addr 11)
+// F: B 6            A006  (ここには来ないはず, スキップされる)
+// 10: HLT           C0F0  (ここにも来ないはず)
+// 11: LI r6, 20     8614  (関数本体: r6 = 20)
+// 12: OUT r6        E0D0  (11_110_000_1101_0000: Rs=r6=110 → OUT=0014)
+//    Wait: 11 | 110 | 000 | 1101 | 0000 = 1111_0000_1101_0000 = 0xF0D0
+// 13: BR r7         9700  (10_010_111_00000000: op2=010, Rb=r7 → PC=r7=F)
+// After BR: PC=r7=F, fetch addr F
+// F: B 6            A006  (PC=F+1=10, target=10+6=16)
+//    Wait, B d: PC=PC+1+sign_ext(d). After fetch at F: PC=10. Target=10+6=16.
+//    But addr 16 = 0x10. Let me use simpler offsets.
+//
+// Let me simplify the BAL/BR test:
+// E: BAL r7, 1      8F01  (r7=PC=F, jump to F+1=10)
+// F: LI r6, 0xFFFF  86FF  (r6 = sign_ext(0xFF) = -1 = 0xFFFF)
+//    Wait, this would be executed AFTER BR returns. Let me restructure.
+//
+// Revised BAL/BR test:
+// E: BAL r7, 2      8F02  (r7=F, PC=F+2=11)
+// F: OUT r6         F0D0  (this runs AFTER BR returns; r6=20 → OUT=0014)
+// 10: LI r0, -1     80FF  (r0=0xFFFF)
+// 11: LI r6, 20     8614  (function body start)
+// 12: BR r7         9700  (return to r7=F)
+//   After BR: PC=r7=F → fetch addr F → OUT r6
+// 13: OUT r0        C0D0  (after OUT r6, fetch 10 → LI r0,-1 → then here OUT r0=0xFFFF)
+// 14: HLT           C0F0
+//
+// Wait this is getting complicated. Let me trace carefully:
+// E: BAL r7, 2. PC after fetch = F. r7=F. DR=F+2=11. Branch → PC=11.
+// 11: LI r6, 20. r6=20.
+// 12: BR r7. DR=r7+0=F. Branch → PC=F.
+// F: OUT r6. Rs=r6=110. 11_110_000_1101_0000 = F0D0. Output r6=20=0x0014.
+// 10: LI r0, -1. r0=0xFFFF.
+// 11: LI r6, 20 (again! infinite loop!)
+//
+// I need a way to skip after returning. Let me use a different approach:
+// E: BAL r7, 3      8F03  (r7=F, PC=F+3=12)
+// F: OUT r6         F0D0  (skipped on first pass; runs after BR)
+// 10: OUT r0        C0D0  (r0=0xFFFF after LI)
+// 11: HLT           C0F0
+// 12: LI r6, 20     8614  (function: r6=20)
+// 13: LI r0, -1     80FF  (r0=0xFFFF)
+// 14: BR r7         9700  (return → PC=F)
+//
+// Trace:
+// E: BAL r7, 3 → r7=F, PC=12
+// 12: LI r6, 20 → r6=20
+// 13: LI r0, -1 → r0=0xFFFF
+// 14: BR r7 → PC=F
+// F: OUT r6 → OUT=0x0014 (20)
+// 10: OUT r0 → OUT=0xFFFF
+// 11: HLT
+//
+// Perfect! Expected outputs in order: 0008, 0003, 000A, 0014, FFFF
+
+8003
+8105
+C800
+C0D0
+8200
+8301
+8403
+DA00
+E250
+B9FD
+D0D0
+8505
+9D05
+E8D0
+8F03
+F0D0
+C0D0
+C0F0
+8614
+80FF
+9700

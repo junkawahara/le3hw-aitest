@@ -1,0 +1,1252 @@
+╭─── Claude Code v2.1.98 ──────────────────────────────────────────────────────╮
+│                                                    │ Tips for getting        │
+│             Welcome back Tarou Tekitou!            │ started                 │
+│                                                    │ ✔ Run /init to create … │
+│                       ▐▛███▜▌                      │ ─────────────────────── │
+│                      ▝▜█████▛▘                     │ Recent activity         │
+│                        ▘▘ ▝▝                       │ No recent activity      │
+│      Opus 4.6 (1M context) · Claude Max ·          │                         │
+│      jkawahara@i.kyoto-u.ac.jp's Organization      │                         │
+│                      ~/le3hw                       │                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+❯ https://isle3hw.kuis.kyoto-u.ac.jp/                                           
+  の導入課題を解いて。gitのリポジトリは作らなくてよいです                       
+
+● Fetch(https://isle3hw.kuis.kyoto-u.ac.jp/)
+  ⎿  Received 43.2KB (200 OK)
+
+● Fetch(https://isle3hw.kuis.kyoto-u.ac.jp/7seg/index.html)
+  ⎿  Received 6.5KB (200 OK)
+
+● もう少し詳細を確認します。
+
+● Fetch(https://isle3hw.kuis.kyoto-u.ac.jp/7seg/index.html)
+  ⎿  Received 6.5KB (200 OK)
+
+● Fetch(https://isle3hw.kuis.kyoto-u.ac.jp/kuis_le3a_hdl.pdf)
+  ⎿  Received 1.3MB (200 OK)
+
+● Fetch(https://isle3hw.kuis.kyoto-u.ac.jp/designflow2026.pdf)
+  ⎿  Received 4.6MB (200 OK)
+
+● PDFが直接読めなかったので、保存されたPDFを読んでみます。また、ピンアサイン情報
+  を探します。
+
+  Read 1 file (ctrl+o to expand)
+
+● Fetch(https://isle3hw.kuis.kyoto-u.ac.jp/7seg/faq.html)
+  ⎿  Error: Request failed with status code 404
+
+● Fetch(https://isle3hw.kuis.kyoto-u.ac.jp/7seg/pinassign.html)
+  ⎿  Error: Request failed with status code 404
+
+● PDFの残りのページと、課題ページの詳細をさらに確認します。
+
+  Read 2 files (ctrl+o to expand)
+
+● デザインフローPDFのピンアサイン情報が含まれていそうなページを確認します。
+
+  Read 1 file (ctrl+o to expand)
+
+● ピンアサイン情報をさらに探します。
+
+  Read 1 file (ctrl+o to expand)
+
+● ピンアサイン表まとめページを探します。
+
+● Fetch(https://isle3hw.kuis.kyoto-u.ac.jp/pinassign.html)
+  ⎿  Error: Request failed with status code 404
+
+● Fetch(https://isle3hw.kuis.kyoto-u.ac.jp/faq.html)
+  ⎿  Received 52.6KB (200 OK)
+● ピンアサイン表まとめページを探してみます。
+
+● Fetch(https://isle3hw.kuis.kyoto-u.ac.jp/7seg/index.html)
+  ⎿  Received 6.5KB (200 OK)
+
+● Fetch(https://isle3hw.kuis.kyoto-u.ac.jp/7seg/7seg_annotate.png)
+  ⎿  Received 1005 bytes (200 OK)
+
+  Read 1 file (ctrl+o to expand)
+
+● 7セグメントLEDのセグメント配置が分かりました。チェックシートも確認します。
+
+● Fetch(https://isle3hw.kuis.kyoto-u.ac.jp/7seg/checksheet.txt)
+  ⎿  Received 3.2KB (200 OK)
+
+● Fetch(https://isle3hw.kuis.kyoto-u.ac.jp/7seg/7seg.png)
+  ⎿  Received 559 bytes (200 OK)
+
+  Read 1 file (ctrl+o to expand)
+
+● 十分な情報が揃いました。Verilog HDLコードを作成します。
+
+  まず現在のディレクトリ構成を確認します。
+
+  Listed 1 directory (ctrl+o to expand)
+
+● 7セグメントLEDのセグメント配置が確認できました。
+
+  - out[0] = g (中央), out[1] = f (左上), out[2] = e (左下)
+  - out[3] = d (下), out[4] = c (右下), out[5] = b (右上)
+  - out[6] = a (上), out[7] = dp (小数点)
+
+  それでは、全3課題のVerilog HDLコードを作成します。
+
+● Write(seg7dec.v)
+  ⎿  Wrote 42 lines to seg7dec.v
+       1 // seg7dec.v - 7セグメントLEDデコーダ (課題1)
+       2 // 4ビット16進数入力を8ビットセグメント出力に変換する組み合わせ
+         回路
+       3 //
+       4 // セグメント配置 (MU500-RK):
+       5 //       out[6](a)
+       6 //      ---------
+       7 //     |         |
+       8 // out[1](f)  out[5](b)
+       9 //     |         |
+      10 //      ---------
+     … +32 lines (ctrl+o to expand)
+
+● Write(seg7dec_top.v)
+  ⎿  Wrote 25 lines to seg7dec_top.v
+       1 // seg7dec_top.v - 課題1 トップモジュール
+       2 // DIPスイッチ4ビット入力 → 7セグメントLED 1桁表示
+       3 //
+       4 // ピンアサイン: ピンアサイン表を参照して設定すること
+       5 //   din[3:0] : DIPスイッチ (負論理: ON=0)
+       6 //   seg[7:0] : 7セグメントLEDセグメント出力
+       7 //   sel[7:0] : 7セグメントLED桁選択 (1桁のみ選択)
+       8 
+       9 module seg7dec_top(
+      10     input  [3:0] din,
+     … +15 lines (ctrl+o to expand)
+
+● Write(seg7dec_tb.v)
+  ⎿  Wrote 31 lines to seg7dec_tb.v
+      1 // seg7dec_tb.v - 課題1 テストベンチ
+      2 // 0x0〜0xFの全入力パターンを検証
+      3 
+      4 `timescale 1ns / 1ps
+      5 
+      6 module seg7dec_tb;
+      7 
+      8 reg  [3:0] din;
+      9 wire [7:0] seg;
+     … +21 lines (ctrl+o to expand)
+
+● Write(counter_top.v)
+  ⎿  Wrote 134 lines to counter_top.v
+       1 // counter_top.v - 課題2 トップモジュール
+       2 // 10進数4桁カウンタ (ダイナミック点灯)
+       3 //
+       4 // 20MHzクロック入力で動作
+       5 // 約1秒ごとに1カウントアップ (0000→9999→0000...)
+       6 // 4桁をダイナミック点灯で表示
+       7 //
+       8 // ピンアサイン: ピンアサイン表を参照して設定すること
+       9 //   clk     : 20MHzクロック入力
+      10 //   rst_n   : リセット (負論理)
+     … +124 lines (ctrl+o to expand)
+
+● Write(counter_top_tb.v)
+  ⎿  Wrote 49 lines to counter_top_tb.v
+       1 // counter_top_tb.v - 課題2 テストベンチ
+       2 // 分周パラメータを小さくしてシミュレーション時間を短縮
+       3 
+       4 `timescale 1ns / 1ps
+       5 
+       6 module counter_top_tb;
+       7 
+       8 reg        clk;
+       9 reg        rst_n;
+      10 wire [7:0] seg;
+     … +39 lines (ctrl+o to expand)
+
+● Write(debounce.v)
+  ⎿  Wrote 35 lines to debounce.v
+       1 // debounce.v - チャタリング除去モジュール
+       2 // スイッチ入力のチャタリング(バウンス)を除去する
+       3 // 一定時間(約20ms)安定した入力値が続いた場合のみ出力を変化させ
+         る
+       4 
+       5 module debounce(
+       6     input      clk,
+       7     input      rst_n,
+       8     input      sw_in,
+       9     output reg sw_out
+      10 );
+     … +25 lines (ctrl+o to expand)
+
+● Write(counter_sw_top.v)
+  ⎿  Wrote 171 lines to counter_sw_top.v
+       1 // counter_sw_top.v - 課題3 トップモジュール
+       2 // 10進数4桁カウンタ + スイッチによる停止/再開機能
+       3 //
+       4 // プッシュスイッチを押すたびにカウントの停止/再開を切り替える
+       5 // チャタリング除去付き
+       6 //
+       7 // ピンアサイン: ピンアサイン表を参照して設定すること
+       8 //   clk     : 20MHzクロック入力
+       9 //   rst_n   : リセット (負論理)
+      10 //   sw      : 停止/再開スイッチ (負論理: 押下時=0)
+     … +161 lines (ctrl+o to expand)
+
+● Write(counter_sw_top_tb.v)
+  ⎿  Wrote 80 lines to counter_sw_top_tb.v
+       1 // counter_sw_top_tb.v - 課題3 テストベンチ
+       2 // カウンタ動作 + スイッチ停止/再開 + チャタリング除去の検証
+       3 
+       4 `timescale 1ns / 1ps
+       5 
+       6 module counter_sw_top_tb;
+       7 
+       8 reg        clk;
+       9 reg        rst_n;
+      10 reg        sw;
+     … +70 lines (ctrl+o to expand)
+
+● 作成したファイルを確認します。
+
+  Listed 1 directory (ctrl+o to expand)
+
+● Iverilogがあればシミュレーションで動作確認してみます。
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Bash(apt list --installed 2>/dev/null | grep -i verilog; which vvp
+      2>/dev/null; dpkg -l | grep -i verilog 2>/dev/null; echo "---"; which
+      verilator 2>/dev/null || ech…)  ⎿  vvp not found
+     ---
+     verilator not found
+     verilator not found
+
+● Verilogシミュレータが入っていないので、コードの論理的正確性を最終確認します。
+
+  Read 1 file (ctrl+o to expand)
+
+● 全エンコーディングを検証しました。正しいです。作成したファイル一覧と設計の概要
+  をまとめます。
+
+  ---
+  作成ファイル一覧
+
+  ┌─────────────────────┬────────────────────────────────────────────────────┐
+  │      ファイル       │                        内容                        │
+  ├─────────────────────┼────────────────────────────────────────────────────┤
+  │ seg7dec.v           │ 課題1: 7セグデコーダ (組み合わせ回路)              │
+  ├─────────────────────┼────────────────────────────────────────────────────┤
+  │ seg7dec_top.v       │ 課題1: トップモジュール (DIPスイッチ→7セグ1桁表示) │
+  ├─────────────────────┼────────────────────────────────────────────────────┤
+  │ seg7dec_tb.v        │ 課題1: テストベンチ                                │
+  ├─────────────────────┼────────────────────────────────────────────────────┤
+  │ counter_top.v       │ 課題2: 10進4桁カウンタ (ダイナミック点灯)          │
+  ├─────────────────────┼────────────────────────────────────────────────────┤
+  │ counter_top_tb.v    │ 課題2: テストベンチ                                │
+  ├─────────────────────┼────────────────────────────────────────────────────┤
+  │ counter_sw_top.v    │ 課題3: カウンタ+停止/再開スイッチ                  │
+  ├─────────────────────┼────────────────────────────────────────────────────┤
+  │ debounce.v          │ 課題3: チャタリング除去モジュール                  │
+  ├─────────────────────┼────────────────────────────────────────────────────┤
+  │ counter_sw_top_tb.v │ 課題3: テストベンチ                                │
+  └─────────────────────┴────────────────────────────────────────────────────┘
+
+  設計概要
+
+  課題1: 7セグメントLED駆動回路
+
+  - 入力: 4ビット16進数 (DIPスイッチ、負論理)
+  - 出力: 8ビットセグメント信号 (active LOW)
+  - assignによる組み合わせ回路 (マルチプレクサ構文)
+  - セグメント配置は課題ページの図 (7seg_annotate.png) に準拠:
+    - out[6]=a(上), out[5]=b(右上), out[4]=c(右下), out[3]=d(下),
+  out[2]=e(左下), out[1]=f(左上), out[0]=g(中央), out[7]=dp
+
+  課題2: 10進数4桁カウンタ
+
+  - クロック: 20MHz → 分周して1Hz (1秒ごとにカウントアップ)
+  - BCD カウンタ: 4桁それぞれ0〜9で桁上げ (0000→9999→0000)
+  - ダイナミック点灯: 4kHz (5000分周) で4桁を高速に切り替え表示
+  - seg7decをサブモジュールとして再利用
+  - パラメータで分周比を変更可能 (テストベンチでは高速化)
+
+  課題3: スイッチ制御
+
+  - debounce モジュール: 20ms安定で出力更新 (チャタリング除去)
+  - 立ち下がりエッジ検出: 押した瞬間を検出
+  - トグル動作: 押すたびに動作/停止を切り替え
+
+  注意事項
+
+  - ピンアサイン: 実機に書き込む際は、ピンアサイン表を参照してQuartus PrimeのPin
+   Plannerで設定が必要です
+  - DIPスイッチ: 負論理 (ON=0) なのでseg7dec_top内で反転しています
+  - 7セグメントLED: Active LOW (0=点灯)
+  を想定しています。ボードの仕様と異なる場合はデコーダの出力を反転してください
+
+✻ Worked for 11m 3s
+
+❯ レポートも書いて pdf にしてください                                           
+
+● PDF生成ツールを確認します。
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Bash(lualatex --version 2>&1 | head -1; kpsewhich ltjsarticle.cls 2>/dev/null
+      && echo "ltjsarticle found" || echo "ltjsarticle not found"; kpsewhich
+      bxjsarticle.cls…)
+  ⎿  This is LuaHBTeX, Version 1.14.0 (TeX Live 2022/dev/Debian)
+     /usr/share/texlive/texmf-dist/tex/luatex/luatexja/ltjsarticle.cls
+     ltjsarticle found
+     … +4 lines (ctrl+o to expand)
+
+● Bash(kpsewhich listings.sty 2>/dev/null && echo "listings found" || echo
+      "listings not found"; kpsewhich geometry.sty 2>/dev/null && echo "geometry
+       found" || echo "g…)
+  ⎿  /usr/share/texlive/texmf-dist/tex/latex/listings/listings.sty
+     listings found
+     /usr/share/texlive/texmf-dist/tex/latex/geometry/geometry.sty
+     … +9 lines (ctrl+o to expand)
+
+● LuaLaTeX + luatexja が使えます。レポートのLaTeXソースを作成します。
+
+● Write(intro.tex)
+  ⎿  Wrote 454 lines to intro.tex
+       1 \documentclass[a4paper,11pt]{ltjsarticle}
+       2 
+       3 \usepackage{geometry}
+       4 \geometry{top=25mm,bottom=25mm,left=25mm,right=25mm}
+       5 \usepackage{listings}
+       6 \usepackage{booktabs}
+       7 \usepackage{graphicx}
+       8 \usepackage{fancyhdr}
+       9 \usepackage{hyperref}
+      10 \usepackage{longtable}
+     … +444 lines (ctrl+o to expand)
+
+● Bash(lualatex -interaction=nonstopmode intro.tex 2>&1 | tail -30)
+  ⎿  LaTeX Warning: Label(s) may have changed. Rerun to get cross-reference
+     s right.
+     … +22 lines (ctrl+o to expand)
+  ⎿  (timeout 2m)
+
+● Bash(lualatex -interaction=nonstopmode intro.tex 2>&1 | tail -5)
+  ⎿  amsfonts/cm/cmmi10.pfb></usr/share/texlive/texmf-dist/fonts/type1/publ
+     ic/amsfon
+     ts/cm/cmr10.pfb></usr/share/texlive/texmf-dist/fonts/type1/public/amsf
+     … +4 lines (ctrl+o to expand)
+  ⎿  (timeout 2m)
+
+  Listed 1 directory (ctrl+o to expand)
+
+● PDFの内容を確認します。
+
+  Read 1 file (ctrl+o to expand)
+
+● PDFが正しく生成されています。残りのページも確認します。
+
+  Read 1 file (ctrl+o to expand)
+
+● レポートが正しくレンダリングされています。最終ページも確認して、不要ファイルを
+  掃除します。
+
+  Read 1 file (ctrl+o to expand)
+
+● 全ページ正しくレンダリングされています。LaTeXの中間ファイルを掃除します。
+
+● Bash(rm -f intro.aux intro.log intro.out intro.toc intro.fls
+      intro.fdb_latexmk)
+  ⎿  Done
+
+  Listed 1 directory (ctrl+o to expand)
+● 完了しました。/home/htd/le3hw/ に以下の成果物が揃っています。
+
+  レポート
+
+  - intro.pdf (22ページ) -
+  表紙・目次・実験環境・課題1〜3・まとめを含む実験レポート
+  - intro.tex - LaTeXソース
+
+  Verilog HDL ソースコード
+
+  ┌──────────────────┬──────┬─────────────────────────────────────────────┐
+  │     ファイル     │ 課題 │                    内容                     │
+  ├──────────────────┼──────┼─────────────────────────────────────────────┤
+  │ seg7dec.v        │ 1    │ 7セグデコーダ (組み合わせ回路)              │
+  ├──────────────────┼──────┼─────────────────────────────────────────────┤
+  │ seg7dec_top.v    │ 1    │ DIPスイッチ→7セグ1桁表示                    │
+  ├──────────────────┼──────┼─────────────────────────────────────────────┤
+  │ counter_top.v    │ 2    │ 10進4桁カウンタ+ダイナミック点灯            │
+  ├──────────────────┼──────┼─────────────────────────────────────────────┤
+  │ counter_sw_top.v │ 3    │ カウンタ+停止/再開スイッチ+チャタリング除去 │
+  ├──────────────────┼──────┼─────────────────────────────────────────────┤
+  │ debounce.v       │ 3    │ チャタリング除去モジュール                  │
+  └──────────────────┴──────┴─────────────────────────────────────────────┘
+
+  テストベンチ
+
+  | seg7dec_tb.v | counter_top_tb.v | counter_sw_top_tb.v |
+
+  提出前に必要な作業
+
+  1. 表紙の学籍番号・氏名を記入 (intro.tex
+  内の「（学籍番号を記入）」「（氏名を記入）」を書き換えて再コンパイル)
+  2. ピンアサインの設定 - ピンアサイン表を参照してQuartus PrimeのPin
+  Plannerで設定
+  3. 実機での動作確認 -
+  シミュレーション結果・性能評価の具体的な数値をレポートに追記
+  4. LuaLaTeXで再コンパイル: lualatex intro.tex (2回実行)
+
+✻ Cooked for 5m 11s
+
+❯ gitに追加してコミットして                                                     
+
+● Bash(git status)
+  ⎿  On branch main
+     Untracked files:
+       (use "git add <file>..." to include in what will be committed)
+     … +5 lines (ctrl+o to expand)
+
+● Bash(git diff --stat)
+  ⎿  (No output)
+
+● Bash(git log --oneline -5 2>/dev/null || echo "No commits yet")
+  ⎿  f601ae3 First commit
+
+● Verilogファイルは既にコミット済みで、レポートファイルが未追跡です。
+
+● Bash(git add intro.pdf intro.tex && git commit -m "$(cat <<'EOF'
+      導入課題レポート(intro.pdf)とLaTeXソースを追加…)
+  ⎿  [main 216d289] 導入課題レポート(intro.pdf)とLaTeXソースを追加
+      2 files changed, 454 insertions(+)
+      create mode 100644 intro.pdf
+      create mode 100644 intro.tex
+
+● Bash(git status && echo "---" && git log --oneline -5)
+  ⎿  On branch main
+     nothing to commit, working tree clean
+     ---
+     … +2 lines (ctrl+o to expand)
+
+● コミット完了です。
+
+  - 216d289 - レポート (intro.pdf, intro.tex) を追加
+  - f601ae3 - Verilog HDLソースコード (既存)
+
+  working treeはクリーンです。
+
+✻ Churned for 35s
+
+❯ /export                                                                       
+  ⎿  Conversation exported to: /home/htd/le3hw/2026-04-10-121044.txt
+
+❯ プロセッサ設計演習の中間報告のために、SIMPLEアーキテクチャの基本的な実装をし  
+  てください                                                                    
+
+● SIMPLEアーキテクチャの仕様を確認します。
+
+● Fetch(https://isle3hw.kuis.kyoto-u.ac.jp/)
+  ⎿  Received 43.2KB (200 OK)
+
+● Fetch(https://isle3hw.kuis.kyoto-u.ac.jp/simple_v40.pdf)
+  ⎿  Received 274.1KB (200 OK)
+
+  Read 1 file (ctrl+o to expand)
+
+● SIMPLEアーキテクチャの仕様を読み取りました。SIMPLE/B (5フェーズ順次実行)
+  の基本実装を作成します。
+
+● Bash(mkdir -p /home/htd/le3hw/simple)
+  ⎿  Done
+
+● 全モジュールを並行して作成します。
+
+● Write(simple/alu.v)
+  ⎿  Wrote 41 lines to simple/alu.v
+       1 // alu.v - SIMPLE/B ALU
+       2 // ADD, SUB, AND, OR, XOR, CMP, MOV + アドレス計算(ADD流用)
+       3 
+       4 module alu(
+       5     input  [15:0] a,
+       6     input  [15:0] b,
+       7     input  [3:0]  op,
+       8     output [15:0] result,
+       9     output        flag_s,
+      10     output        flag_z,
+     … +31 lines (ctrl+o to expand)
+
+● Write(simple/shifter.v)  ⎿  Wrote 36 lines to simple/shifter.v
+       1 // shifter.v - SIMPLE/B バレルシフタ
+       2 // SLL(00), SLR(01), SRL(10), SRA(11)
+       3 
+       4 module shifter(
+       5     input  [15:0] data,
+       6     input  [3:0]  d,
+       7     input  [1:0]  op,
+       8     output reg [15:0] result,
+       9     output reg        flag_c
+      10 );
+     … +26 lines (ctrl+o to expand)
+
+● Write(simple/regfile.v)
+  ⎿  Wrote 31 lines to simple/regfile.v
+       1 // regfile.v - SIMPLE/B レジスタファイル (8 x 16bit)
+       2 // 2リード / 1ライトポート, 非同期リード
+       3 
+       4 module regfile(
+       5     input             clk,
+       6     input             rst_n,
+       7     input      [2:0]  rd_addr0,
+       8     input      [2:0]  rd_addr1,
+       9     output     [15:0] rd_data0,
+      10     output     [15:0] rd_data1,
+     … +21 lines (ctrl+o to expand)
+
+● Write(simple/simple_cpu.v)
+  ⎿  Wrote 223 lines to simple/simple_cpu.v
+       1 // simple_cpu.v - SIMPLE/B CPU コア
+       2 // 5フェーズ順次実行: p1(IF) → p2(RR) → p3(EX) → p4(MA) → p5(WB)
+       3 //
+       4 // ブロック図 (SIMPLE設計資料 図2 準拠):
+       5 //   PC → メモリ → IR → デコード → レジスタファイル(AR,BR)
+       6 //   → ALU/シフタ → DR → メモリ/IO → MDR → レジスタ書き戻し
+       7 
+       8 module simple_cpu(
+       9     input         clk,
+      10     input         rst_n,
+     … +213 lines (ctrl+o to expand)
+
+● Write(simple/mem.v)
+  ⎿  Wrote 29 lines to simple/mem.v
+       1 // mem.v - SIMPLE/B 主記憶
+       2 // 非同期リード / 同期ライト
+       3 // $readmemh でプログラムを初期化
+       4 
+       5 module mem(
+       6     input         clk,
+       7     input  [15:0] addr,
+       8     input  [15:0] wdata,
+       9     input         we,
+      10     output [15:0] rdata
+     … +19 lines (ctrl+o to expand)
+
+● Write(simple/test.hex)
+  ⎿  Wrote 30 lines to simple/test.hex
+       1 // SIMPLE/B テストプログラム
+       2 // r0 を 1 ずつインクリメントし、遅延ループ付きで OUT する
+       3 //
+       4 // addr  hex   instruction
+       5 // 0     8000  LI r0, 0        ; カウンタ
+       6 // 1     8101  LI r1, 1        ; インクリメント値
+       7 // 2     840A  LI r4, 10       ; 外側ループ回数
+       8 // 3     C800  ADD r0, r1      ; r0++
+       9 // 4     C0D0  OUT r0          ; 出力
+      10 // 5     8300  LI r3, 0        ; 外側カウンタ
+     … +20 lines (ctrl+o to expand)
+
+● Write(simple/simple_top.v)
+  ⎿  Wrote 84 lines to simple/simple_top.v
+       1 // simple_top.v - SIMPLE/B トップモジュール
+       2 // CPU + メモリ + 7セグ表示 + I/O
+       3 //
+       4 // ピンアサイン: ピンアサイン表を参照して設定すること
+       5 //   clk      : 20MHz クロック
+       6 //   rst_n    : リセットボタン (負論理)
+       7 //   exec     : 実行ボタン (正論理: 押すと1)
+       8 //   sw[15:0] : DIPスイッチ (IN命令用, 負論理)
+       9 //   seg[7:0] : 7セグメントLEDセグメント出力
+      10 //   sel[7:0] : 7セグメントLED桁選択
+     … +74 lines (ctrl+o to expand)
+
+● Write(simple/simple_tb.v)
+  ⎿  Wrote 83 lines to simple/simple_tb.v
+       1 // simple_tb.v - SIMPLE/B テストベンチ
+       2 // テストプログラムを実行し、OUT命令の出力と HLT による停止を検
+         証
+       3 
+       4 `timescale 1ns / 1ps
+       5 
+       6 module simple_tb;
+       7 
+       8 reg         clk;
+       9 reg         rst_n;
+      10 reg         exec;
+     … +73 lines (ctrl+o to expand)
+
+● シミュレータが無いのでコードの最終確認を行います。
+
+  Listed 1 directory (ctrl+o to expand)
+
+● simple_top.v が seg7dec モジュールを参照しているので、上位ディレクトリのファイ
+  ルにアクセスできるか確認し、テストベンチの論理も最終チェックします。
+
+● Agent(Verify SIMPLE/B CPU logic) Sonnet 4.6
+  ⎿  Done (7 tool uses · 16.9k tokens · 28s)
+  (ctrl+o to expand)
+
+● ロジック検証完了 - バグなし。タスクを完了させます。
+
+● SIMPLE/Bプロセッサの基本実装が完了しました。
+
+  作成ファイル (simple/ ディレクトリ)
+
+  ┌──────────────┬─────────────────────────────────────────────────┐
+  │   ファイル   │                      内容                       │
+  ├──────────────┼─────────────────────────────────────────────────┤
+  │ alu.v        │ ALU (ADD/SUB/AND/OR/XOR/CMP/MOV + SZCV フラグ)  │
+  ├──────────────┼─────────────────────────────────────────────────┤
+  │ shifter.v    │ バレルシフタ (SLL/SLR/SRL/SRA)                  │
+  ├──────────────┼─────────────────────────────────────────────────┤
+  │ regfile.v    │ レジスタファイル (8x16bit, 2R/1W, 非同期リード) │
+  ├──────────────┼─────────────────────────────────────────────────┤
+  │ simple_cpu.v │ CPU コア (5フェーズ順次実行 FSM)                │
+  ├──────────────┼─────────────────────────────────────────────────┤
+  │ mem.v        │ 主記憶 (非同期リード, $readmemh 初期化)         │
+  ├──────────────┼─────────────────────────────────────────────────┤
+  │ simple_top.v │ トップモジュール (CPU+メモリ+7セグ表示)         │
+  ├──────────────┼─────────────────────────────────────────────────┤
+  │ simple_tb.v  │ テストベンチ (LI/ADD/OUT/HLT 検証)              │
+  ├──────────────┼─────────────────────────────────────────────────┤
+  │ test.hex     │ デモプログラム (遅延ループ付きカウンタ)         │
+  └──────────────┴─────────────────────────────────────────────────┘
+
+  アーキテクチャ概要
+
+  5フェーズ順次実行 (SIMPLE/B):
+    P1: 命令フェッチ (IR←mem[PC], PC←PC+1)
+    P2: レジスタ読み出し (AR←r[Rs], BR←r[Rd])
+    P3: 演算 (DR←ALU/Shifter結果, フラグ更新)
+    P4: 主記憶アクセス/IO (LD→MDR, ST→mem書込, IN/OUT)
+    P5: レジスタ書き戻し/分岐 (r[dst]←DR/MDR, PC←DR)
+
+  対応命令
+
+  - 算術/論理: ADD, SUB, AND, OR, XOR, CMP, MOV
+  - シフト: SLL, SLR, SRL, SRA
+  - ロード/ストア: LD, ST
+  - 即値/分岐: LI, B, BE, BLT, BLE, BNE
+  - IO: IN, OUT, HLT
+
+  デモプログラム (test.hex)
+
+  r0を1ずつインクリメントし、約0.3秒間隔で7セグLEDに出力する無限ループカウンタ。
+  中間報告のデモに使用可能。
+
+✻ Churned for 17m 33s
+
+❯ /export                                                                       
+  ⎿  Conversation exported to: /home/htd/le3hw/log/2026-04-10-133823.txt
+
+❯ /init                                                                         
+
+● Explore(Explore codebase structure)
+  ⎿  Done (27 tool uses · 35.5k tokens · 41s)
+  (ctrl+o to expand)
+
+● Write(CLAUDE.md)
+  ⎿  Wrote 57 lines to CLAUDE.md
+       1 # CLAUDE.md
+       2 
+       3 This file provides guidance to Claude Code (claude.ai/code) when
+          working with code in this repository.
+       4 
+       5 ## Project Overview
+       6 
+       7 京都大学 計算機科学実験及演習3 ハードウェア (le3hw) の課題リポジ
+         トリ。Verilog HDLによるFPGA設計。
+       8 
+       9 - **Target**: PowerMedusa MU500-RX/RK (Altera Cyclone IV EP4CE30
+         F23I7N)
+      10 - **CAD**: Intel Quartus Prime 20.1 Standard Edition
+     … +47 lines (ctrl+o to expand)
+
+● CLAUDE.md を作成しました。プロジェクトの概要、アーキテクチャ、ビルド方法、コー
+  ディング規約をまとめています。
+
+✻ Brewed for 1m 35s
+
+❯ gitコミットして                                                               
+
+● Bash(git status)
+  ⎿  On branch main
+     Untracked files:
+       (use "git add <file>..." to include in what will be committed)
+     … +6 lines (ctrl+o to expand)
+
+● Bash(git diff --stat)
+  ⎿  (No output)
+
+● Bash(git log --oneline -5)
+  ⎿  216d289 導入課題レポート(intro.pdf)とLaTeXソースを追加
+     f601ae3 First commit
+
+● Bash(git add CLAUDE.md simple/alu.v simple/shifter.v simple/regfile.v
+      simple/simple_cpu.v simple/mem.v simple/simple_top.v simple/simple_tb.v
+      simple/test.hex && git…)  ⎿  [main cb8791b] SIMPLE/Bプロセッサの基本実装とCLAUDE.mdを追加
+      9 files changed, 614 insertions(+)
+      create mode 100644 CLAUDE.md
+     … +8 lines (ctrl+o to expand)
+
+● Bash(git log --oneline)
+  ⎿  cb8791b SIMPLE/Bプロセッサの基本実装とCLAUDE.mdを追加
+     216d289 導入課題レポート(intro.pdf)とLaTeXソースを追加
+     f601ae3 First commit
+
+● コミット完了です (cb8791b)。log/
+  ディレクトリは意図的にコミット対象外にしました。
+
+✻ Baked for 49s
+
+❯ log/ もコミットして                                                           
+
+● Bash(git add log/ && git commit -m "$(cat <<'EOF'
+      会話ログを追加…)
+  ⎿  [main f9bc493] 会話ログを追加
+      2 files changed, 1075 insertions(+)
+      create mode 100644 log/2026-04-10-121044.txt
+      create mode 100644 log/2026-04-10-133823.txt
+
+● コミット完了 (f9bc493)。
+
+! pwd                                                                           
+  ⎿  /home/htd/le3hw
+
+❯ 最初の課題は別のフォルダに移動させてコミットして                              
+
+● Bash(mkdir -p /home/htd/le3hw/intro && git mv seg7dec.v seg7dec_top.v
+      seg7dec_tb.v counter_top.v counter_top_tb.v counter_sw_top.v
+      counter_sw_top_tb.v debounce.v int…)
+  ⎿  (No output)
+
+● simple_top.v が seg7dec を参照しているので、パスを更新します。
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● seg7dec は SIMPLE/B でも使うので、simple/ にコピーを置きます。
+
+● Bash(cp /home/htd/le3hw/intro/seg7dec.v /home/htd/le3hw/simple/seg7dec.v)
+  ⎿  Done
+
+● Bash(git status)
+  ⎿  On branch main
+     Changes to be committed:
+       (use "git restore --staged <file>..." to unstage)
+     … +14 lines (ctrl+o to expand)
+
+● Bash(git add simple/seg7dec.v && git commit -m "$(cat <<'EOF'
+      導入課題ファイルをintro/ディレクトリに移動…)
+  ⎿  [main d4ab13c] 導入課題ファイルをintro/ディレクトリに移動
+      11 files changed, 42 insertions(+)
+      rename counter_sw_top.v => intro/counter_sw_top.v (100%)
+     … +10 lines (ctrl+o to expand)
+
+● コミット完了 (d4ab13c)。ディレクトリ構成は以下のようになりました:
+
+  le3hw/
+  ├── CLAUDE.md
+  ├── intro/          ← 導入課題 (課題1-3)
+  │   ├── seg7dec.v, seg7dec_top.v, seg7dec_tb.v
+  │   ├── counter_top.v, counter_top_tb.v
+  │   ├── counter_sw_top.v, counter_sw_top_tb.v
+  │   ├── debounce.v
+  │   ├── intro.tex, intro.pdf
+  ├── simple/         ← SIMPLE/Bプロセッサ
+  │   ├── seg7dec.v   (コピー: simple_topで使用)
+  │   ├── alu.v, shifter.v, regfile.v
+  │   ├── simple_cpu.v, mem.v, simple_top.v
+  │   ├── simple_tb.v, test.hex
+  └── log/
+
+✻ Cogitated for 1m 26s
+
+❯ WSL2 / Ubuntu (22.04) で使えるシミュレータはありますか                        
+
+● Bash(apt list --installed 2>/dev/null | grep -iE
+      "verilog|iverilog|verilator|ghdl|modelsim" 2>/dev/null; echo "---"; which
+      iverilog vvp verilator gtkwave 2>/dev/null…)
+  ⎿  ---
+     iverilog not found
+     vvp not found
+     … +14 lines (ctrl+o to expand)
+
+● Icarus Verilog (iverilog) がaptで入ります。
+
+  sudo apt install iverilog
+
+  これでできること:
+  - iverilog — Verilogコンパイル
+  - vvp — シミュレーション実行
+  - 波形は gtkwave（sudo apt install gtkwave）で確認可能（ただしWSL2ではGUI要）
+
+  使い方の例:
+
+  # コンパイル & 実行 (テストベンチ)
+  cd simple
+  iverilog -o sim.out simple_tb.v simple_cpu.v alu.v shifter.v regfile.v mem.v
+  vvp sim.out
+
+  # 導入課題
+  cd intro
+  iverilog -o sim.out seg7dec_tb.v seg7dec.v
+  vvp sim.out
+
+  インストールしますか？
+
+! sudo apt install iverilog                                                     
+  ⎿  sudo: a terminal is required to read the password; either use the -S o
+     ption to read from standard input or configure an askpass helper
+     sudo: a password is required
+
+❯ 自分でインストールしました。試しに実行してください                            
+
+● Bash(which iverilog && iverilog -V 2>&1 | head -1)
+  ⎿  /usr/bin/iverilog
+     Icarus Verilog version 11.0 (stable) ()
+
+● Bash(cd /home/htd/le3hw/intro && iverilog -o seg7dec_sim.out seg7dec_tb.v
+      seg7dec.v && vvp seg7dec_sim.out)
+  ⎿  counter_sw_top.v     counter_top.v     debounce.v  intro.tex  seg7dec_
+     tb.v
+     counter_sw_top_tb.v  counter_top_tb.v  intro.pdf   seg7dec.v  seg7dec_
+     … +23 lines (ctrl+o to expand)
+
+● Bash(cd /home/htd/le3hw/simple && iverilog -o simple_sim.out simple_tb.v
+      simple_cpu.v alu.v shifter.v regfile.v && vvp simple_sim.out)
+  ⎿  Running in the background (↓ to manage)
+
+  Read 1 file (ctrl+o to expand)
+● 両テストとも正常動作しています。
+
+  - seg7dec: 0〜Fの全16パターンが正しいセグメントパターンを出力
+  - SIMPLE/B CPU: OUT = 0008 (8) — LI 3 + LI 5 + ADD = 8 を正しく出力、HLT
+  で停止 (PC=0005)
+
+  ただしテストベンチの $stop がHLT後も繰り返し発火しています。$finish
+  に修正します。
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(simple/simple_tb.v)
+  ⎿  Added 10 lines, removed 8 lines
+      66      #50;
+      67      exec = 1'b0;
+      68  
+      69 -    // HLT まで待機 (最大100サイクル)                          
+      70 -    repeat (200) begin                                         
+      71 -        @(posedge clk);                                        
+      72 -        if (halted) begin                                      
+      73 -            $display("--- CPU Halted (PC=%h) ---", cpu.pc);    
+      74 -            #100;                                              
+      75 -            $stop;                                             
+      69 +    // HLT まで待機 (最大200サイクル)                          
+      70 +    begin : wait_halt                                          
+      71 +        integer i;                                             
+      72 +        for (i = 0; i < 200; i = i + 1) begin                  
+      73 +            @(posedge clk);                                    
+      74 +            if (halted) begin                                  
+      75 +                $display("--- CPU Halted (PC=%h) ---", cpu.pc);
+      76 +                $finish;                                       
+      77 +            end                                                
+      78          end
+      79      end
+      80  
+      81      $display("--- Timeout ---");
+      80 -    $stop;                                                     
+      82 +    $finish;                                                   
+      83  end
+      84  
+      85  endmodule
+
+● seg7dec のテストベンチも同様に修正します。
+
+  Read 1 file (ctrl+o to expand)
+
+● Update(intro/seg7dec_tb.v)
+  ⎿  Added 1 line, removed 1 line
+      25      end
+      26  
+      27      #100;
+      28 -    $stop;                                                     
+      28 +    $finish;                                                   
+      29  end
+      30  
+      31  endmodule
+
+● 修正後に再実行して確認します。
+
+● Bash(cd /home/htd/le3hw/simple && iverilog -o simple_sim.out simple_tb.v
+      simple_cpu.v alu.v shifter.v regfile.v && vvp simple_sim.out)
+  ⎿  alu.v  regfile.v  shifter.v     simple_sim.out*  simple_top.v
+     mem.v  seg7dec.v  simple_cpu.v  simple_tb.v      test.hex
+     --- Execution Start ---
+     … +2 lines (ctrl+o to expand)
+
+● Bash(cd /home/htd/le3hw/intro && iverilog -o seg7dec_sim.out seg7dec_tb.v
+      seg7dec.v && vvp seg7dec_sim.out)
+  ⎿  counter_sw_top.v     counter_top_tb.v  intro.tex         seg7dec_tb.v
+     counter_sw_top_tb.v  debounce.v        seg7dec.v         seg7dec_top.v
+     counter_top.v        intro.pdf         seg7dec_sim.out*
+     … +18 lines (ctrl+o to expand)
+
+● 両テストとも正常に完了し、クリーンに終了しました。
+
+  - SIMPLE/B CPU: OUT = 0008 (8) → 正常停止 (PC=0005)
+  - seg7dec: 0〜F の全16パターン正常出力
+
+  生成された .out ファイルを掃除します。
+
+● Bash(rm -f /home/htd/le3hw/simple/simple_sim.out
+      /home/htd/le3hw/intro/seg7dec_sim.out)
+  ⎿  Done
+
+● 全テスト成功、出力もクリーンになりました。
+
+✻ Churned for 4m 15s
+
+❯ 課題としては書かれていないですが、ここまでの結果を導入課題のようなレポートと  
+  してまとめて pdf にしてください                                               
+
+● Write(simple/report.tex)
+  ⎿  Wrote 638 lines to simple/report.tex
+       1 \documentclass[a4paper,11pt]{ltjsarticle}
+       2 
+       3 \usepackage{geometry}
+       4 \geometry{top=25mm,bottom=25mm,left=25mm,right=25mm}
+       5 \usepackage{listings}
+       6 \usepackage{booktabs}
+       7 \usepackage{graphicx}
+       8 \usepackage{fancyhdr}
+       9 \usepackage{hyperref}
+      10 \usepackage{xcolor}
+     … +628 lines (ctrl+o to expand)
+
+● Bash(cd /home/htd/le3hw/simple && lualatex -interaction=nonstopmode report.tex
+       2>&1 | tail -5)
+  ⎿  alu.v  regfile.v   seg7dec.v  simple_cpu.v  simple_top.v
+     mem.v  report.tex  shifter.v  simple_tb.v   test.hex
+     mf-dist/fonts/type1/public/amsfonts/cm/cmr9.pfb></usr/share/texlive/te
+     … +6 lines (ctrl+o to expand)
+  ⎿  (timeout 2m)
+
+● Bash(lualatex -interaction=nonstopmode report.tex 2>&1 | tail -3)
+  ⎿  type1/public/amsfonts/cm/cmsy9.pfb>
+     Output written on report.pdf (23 pages, 322375 bytes).
+     Transcript written on report.log.
+  ⎿  (timeout 2m)
+
+  Read 1 file (ctrl+o to expand)
+
+● PDFが正しく生成されています。LaTeXの中間ファイルを掃除します。
+
+● Bash(rm -f /home/htd/le3hw/simple/report.aux /home/htd/le3hw/simple/report.log
+       /home/htd/le3hw/simple/report.out /home/htd/le3hw/simple/report.toc && ls
+       -lh /home/ht…)
+  ⎿  -rw-r--r-- 1 htd htd 315K 2026/04/10 13:56 /home/htd/le3hw/simple/repo
+     rt.pdf
+
+● simple/report.pdf (23ページ, 315KB) を生成しました。
+
+  レポート構成
+
+  1. はじめに
+  2. 実験環境
+  3. SIMPLEアーキテクチャ概要 (レジスタ/メモリ、命令セット全表)
+  4. SIMPLE/Bマイクロアーキテクチャ
+  (ブロック図、5フェーズ動作、データパス表、制御信号)
+  5. モジュール設計 (ALU/シフタ/レジスタファイル/メモリ/CPU/トップ —
+  全HDLコード付き)
+  6. テストプログラム (基本テスト + 遅延付きカウンタ、機械語対応表)
+  7. 動作検証 (テストベンチ、シミュレーション結果 OUT=0008、命令実行トレース)
+  8. 性能評価 (サイクル数、回路規模見積もり、Fmax考察、改良方向性)
+  9. まとめ
+
+✻ Churned for 4m 48s
+
+❯ /export                                                                       
+  ⎿  Conversation exported to: /home/htd/le3hw/simple/log/2026-04-10-135818.txt
+
+❯ 変更点をすべてコミットして                                                    
+
+● Bash(git status)
+  ⎿  On branch main
+     Changes not staged for commit:
+       (use "git add <file>..." to update what will be committed)
+     … +11 lines (ctrl+o to expand)
+
+● Bash(git log --oneline -3)
+  ⎿  69250f3 Update log
+     d4ab13c 導入課題ファイルをintro/ディレクトリに移動
+     f9bc493 会話ログを追加
+● Bash(git add simple/report.pdf simple/report.tex simple/simple_tb.v
+      intro/seg7dec_tb.v && git commit -m "$(cat <<'EOF'
+      SIMPLE/B設計レポートを追加し、テストベンチを修正…)
+  ⎿  Error: Exit code 128
+     fatal: pathspec 'simple/report.pdf' did not match any files
+
+● Bash(pwd)
+  ⎿  /home/htd/le3hw/simple
+
+● Bash(cd /home/htd/le3hw && git add simple/report.pdf simple/report.tex
+      simple/simple_tb.v intro/seg7dec_tb.v && git commit -m "$(cat <<'EOF'
+      SIMPLE/B設計レポートを追加し、テストベン…)
+  ⎿  CLAUDE.md  intro/  log/  simple/
+     [main 5d10c53] SIMPLE/B設計レポートを追加し、テストベンチを修正
+      4 files changed, 649 insertions(+), 9 deletions(-)
+     … +2 lines (ctrl+o to expand)
+
+● コミット完了 (5d10c53)。
+
+✻ Sautéed for 1m 32s
+
+! pwd                                                                           
+  ⎿  /home/htd/le3hw
+
+❯ 「各グループで独自のプロセッサを開発」と課題にはありますが、ここからどのよう  
+  に拡張できるか、できる限りたくさん提案してください                            
+
+● SIMPLE/Bからの拡張を、命令セット、マイクロアーキテクチャ、I/O・周辺機器、ソフ
+  トウェア基盤の4カテゴリで提案します。
+
+  ---
+  1. 命令セットアーキテクチャ (ISA) の拡張
+
+  難易度: 低
+
+  ┌─────────────┬────────────────────────────────────┬──────────────────────┐
+  │    拡張     │                内容                │         効果         │
+  ├─────────────┼────────────────────────────────────┼──────────────────────┤
+  │             │ ADD/SUB等でdフィールドを即値として │                      │
+  │ 即値オペラ  │ 使用（r[Rd] = r[Rd] +              │ LI+ADD               │
+  │ ンドの強化  │ sign_ext(d)）。dの1ビットをフラグ  │ の2命令を1命令に削減 │
+  │             │ にしてレジスタ/即値を切替          │                      │
+  ├─────────────┼────────────────────────────────────┼──────────────────────┤
+  │ NOP命令の明 │ reserved領域(op3=0111等)にNOPを割  │ パイプライン化時のバ │
+  │ 示定義      │ 当て                               │ ブル挿入に必要       │
+  ├─────────────┼────────────────────────────────────┼──────────────────────┤
+  │ NOT/NEG命令 │ ビット反転・符号反転を1命令で      │ NOT: 現状XOR         │
+  │             │                                    │ r,0xFFFFで2命令必要  │
+  └─────────────┴────────────────────────────────────┴──────────────────────┘
+
+  難易度: 中
+
+  ┌────────────┬────────────────────────────────────┬───────────────────────┐
+  │    拡張    │                内容                │         効果          │
+  ├────────────┼────────────────────────────────────┼───────────────────────┤
+  │ BAL        │ PC+1をレジスタに退避してからジャン │ サブルーチンコールが  │
+  │ (Branch    │ プ。関数呼び出しの実現             │ 可能に                │
+  │ And Link)  │                                    │                       │
+  ├────────────┼────────────────────────────────────┼───────────────────────┤
+  │ BR (Branch │ レジスタの値にジャンプ（PC =       │ 関数からのリターンが  │
+  │  Register) │ r[Rb]）。BALからの復帰用           │ 可能に                │
+  ├────────────┼────────────────────────────────────┼───────────────────────┤
+  │ ADDI/SUBI  │ 即値加減算命令を専用に追加         │ ループカウンタ操作が  │
+  │            │                                    │ 高速化                │
+  ├────────────┼────────────────────────────────────┼───────────────────────┤
+  │ LUI (Load  │ 上位8ビットに即値をロード。LIと組  │ 任意の16ビット定数を2 │
+  │ Upper      │ み合わせて16ビット即値を構成       │ 命令でロード          │
+  │ Immediate) │                                    │                       │
+  ├────────────┼────────────────────────────────────┼───────────────────────┤
+  │ I/Oアドレ  │ IN/OUTでRdとdフィールドでI/Oポート │ 複数のI/Oデバイスを区 │
+  │ ス拡張     │ 番号を指定                         │ 別可能                │
+  ├────────────┼────────────────────────────────────┼───────────────────────┤
+  │ 比較+分岐  │ reserved領域を使い、CMP+Bccを1命令 │ ループの命令数削減、  │
+  │ の1命令化  │ に統合                             │ 分岐ペナルティ低減    │
+  ├────────────┼────────────────────────────────────┼───────────────────────┤
+  │ SWP (Swap) │ 2レジスタの値を交換                │ ソートアルゴリズム等  │
+  │            │                                    │ で有用                │
+  └────────────┴────────────────────────────────────┴───────────────────────┘
+
+  難易度: 高
+
+  ┌────────────┬───────────────────────────────────┬────────────────────────┐
+  │    拡張    │               内容                │          効果          │
+  ├────────────┼───────────────────────────────────┼────────────────────────┤
+  │ 条件付き実 │ 条件コードに基づき演算を実行/スキ │ 分岐を排除しパイプライ │
+  │ 行命令     │ ップ（ARM的）                     │ ンバブル削減           │
+  ├────────────┼───────────────────────────────────┼────────────────────────┤
+  │ MUL (乗算) │ ハードウェア乗算器。Cyclone       │ DSP的な処理が可能に    │
+  │            │ IVの組込み乗算器を活用            │                        │
+  ├────────────┼───────────────────────────────────┼────────────────────────┤
+  │ MAC        │ r[c] = r[c] + r[a] * r[b]         │ フィルタ・行列演算の高 │
+  │ (積和演算) │                                   │ 速化                   │
+  ├────────────┼───────────────────────────────────┼────────────────────────┤
+  │ PUSH/POP   │ スタック操作命令。専用スタックポ  │ 関数呼び出しのレジスタ │
+  │            │ インタレジスタを追加              │ 退避が容易に           │
+  ├────────────┼───────────────────────────────────┼────────────────────────┤
+  │ 割り込みサ │ 外部入力でPC退避→割り込みハンドラ │ リアルタイム入力処理が │
+  │ ポート     │ へジャンプ→復帰                   │ 可能                   │
+  └────────────┴───────────────────────────────────┴────────────────────────┘
+
+  ---
+  2. マイクロアーキテクチャの改良
+
+  難易度: 低
+
+  ┌───────────────┬───────────────────────────────────────┬─────────────────┐
+  │     改良      │                 内容                  │      効果       │
+  ├───────────────┼───────────────────────────────────────┼─────────────────┤
+  │ p1/p5並列実行 │ 命令フェッチとレジスタ書き戻しを同時  │ 1命令あたり4サ  │
+  │               │ 実行。分岐先PCのセットを工夫          │ イクル          │
+  │ (4サイクル化) │                                       │ (25%高速化)     │
+  ├───────────────┼───────────────────────────────────────┼─────────────────┤
+  │               │ 非同期リード(分散RAM)→同期リード(M9K  │ 大規模プログラ  │
+  │ Block RAM化   │ Block                                 │ ムが実行可能    │
+  │               │ RAM)に変更。メモリ容量を33KWに拡大    │                 │
+  ├───────────────┼───────────────────────────────────────┼─────────────────┤
+  │ ハーバードア  │ 命令用RAMとデータ用RAMを分離（デュア  │ p1とp4のメモリ  │
+  │ ーキテクチャ  │ ルポート不要）                        │ 競合が解消      │
+  └───────────────┴───────────────────────────────────────┴─────────────────┘
+
+  難易度: 中
+
+  ┌──────────────┬─────────────────────────────────────┬───────────────────┐
+  │     改良     │                内容                 │       効果        │
+  ├──────────────┼─────────────────────────────────────┼───────────────────┤
+  │ p1/p3 +      │ フェッチ/演算とデコード/書き戻しを  │ 1命令あたり3サイ  │
+  │ p2/p5 並列 ( │ 並列実行                            │ クル (40%高速化)  │
+  │ 3サイクル化) │                                     │                   │
+  ├──────────────┼─────────────────────────────────────┼───────────────────┤
+  │ フォワーディ │ 演算結果をレジスタファイル経由せず  │ データハザードに  │
+  │ ング         │ 直接次命令の入力に供給              │ よるストール削減  │
+  │ (バイパス)   │                                     │                   │
+  ├──────────────┼─────────────────────────────────────┼───────────────────┤
+  │ 分岐予測     │ 後方分岐は常にtaken、前方分岐はnot- │ ループの分岐ペナ  │
+  │ (静的)       │ takenと予測                         │ ルティ削減        │
+  ├──────────────┼─────────────────────────────────────┼───────────────────┤
+  │ 命令キャッシ │ 直前にフェッチした数命令を保持し、  │ タイトループの高  │
+  │ ュ的バッファ │ 短いループでメモリアクセスを省略    │ 速化              │
+  └──────────────┴─────────────────────────────────────┴───────────────────┘
+
+  難易度: 高
+
+  ┌─────────────┬────────────────────────────────────────────┬─────────────┐
+  │    改良     │                    内容                    │    効果     │
+  ├─────────────┼────────────────────────────────────────────┼─────────────┤
+  │ 5段パイプラ │ p1/p2/p3/p4/p5を完全並列実行。データハザー │ 理想的には5 │
+  │ イン化      │ ド・コントロールハザード対策が必須         │ 倍の性能向  │
+  │ (1CPI目標)  │                                            │ 上          │
+  ├─────────────┼────────────────────────────────────────────┼─────────────┤
+  │ 2命令同時発 │ 連続する2命令のレジスタ依存を判定し、独立  │ さらに2倍の │
+  │ 行 (スーパ  │ なら並列実行。ALU×2、レジスタファイル4R/2W │ 性能向上    │
+  │ スカラ)     │                                            │             │
+  ├─────────────┼────────────────────────────────────────────┼─────────────┤
+  │ ループバッ  │ 小ループの命令列をバッファに格納し、メモリ │ 電力削減 +  │
+  │ ファ        │ フェッチをスキップ                         │ ループ高速  │
+  │             │                                            │ 化          │
+  ├─────────────┼────────────────────────────────────────────┼─────────────┤
+  │ PLL利用のク │                                            │ 絶対性能の  │
+  │ ロック高速  │ Cyclone IV内蔵PLLで20MHz→40〜100MHzに逓倍  │ 向上        │
+  │ 化          │                                            │             │
+  └─────────────┴────────────────────────────────────────────┴─────────────┘
+
+  ---
+  3. I/O・周辺機器の拡張
+
+  難易度: 低
+
+  ┌───────────────┬─────────────────────────────────────────┬──────────────┐
+  │     拡張      │                  内容                   │     効果     │
+  ├───────────────┼─────────────────────────────────────────┼──────────────┤
+  │ 7セグ8桁フル  │ 32ビット(8桁hex)表示。レジスタ値やメモ  │ デバッグが容 │
+  │ 活用          │ リ内容のリアルタイム表示                │ 易に         │
+  ├───────────────┼─────────────────────────────────────────┼──────────────┤
+  │ LED 64個出力  │ MU500-7SEG拡張ボードのLEDをビットマップ │ グラフィカル │
+  │               │ 表示                                    │ な出力       │
+  ├───────────────┼─────────────────────────────────────────┼──────────────┤
+  │ ロータリース  │ 表示モード切替（PC/レジスタ/メモリダン  │ 実行状態の観 │
+  │ イッチ入力    │ プ等）                                  │ 測が容易     │
+  ├───────────────┼─────────────────────────────────────────┼──────────────┤
+  │ ステップ実行  │ execボタン1回押下で1命令だけ実行        │ デバッグ用   │
+  │ モード        │                                         │              │
+  └───────────────┴─────────────────────────────────────────┴──────────────┘
+
+  難易度: 中
+
+  ┌──────────┬─────────────────────────────────────────┬────────────────────┐
+  │   拡張   │                  内容                   │        効果        │
+  ├──────────┼─────────────────────────────────────────┼────────────────────┤
+  │ ブザー出 │ 特定のI/Oアドレスに書き込むとブザーで音 │ サウンド出力デモ   │
+  │ 力       │ を出す                                  │                    │
+  ├──────────┼─────────────────────────────────────────┼────────────────────┤
+  │ タイマカ │ 一定周期でカウントアップするハードウェ  │ ソフトウェア遅延ル │
+  │ ウンタ   │ アタイマ。IN命令で読み出し              │ ープが不要に       │
+  ├──────────┼─────────────────────────────────────────┼────────────────────┤
+  │ UART送受 │ シリアル通信モジュールを追加し、PCとデ  │ プログラムの動的ロ │
+  │ 信       │ ータ交換                                │ ードが可能         │
+  ├──────────┼─────────────────────────────────────────┼────────────────────┤
+  │ VGA出力  │ テキストVRAMを実装し、VGA信号を生成     │ モニタにテキスト表 │
+  │          │                                         │ 示                 │
+  └──────────┴─────────────────────────────────────────┴────────────────────┘
+
+  難易度: 高
+
+  ┌────────────────────┬─────────────────────────────────┬──────────────────┐
+  │        拡張        │              内容               │       効果       │
+  ├────────────────────┼─────────────────────────────────┼──────────────────┤
+  │ DMA (Direct Memory │ CPUを介さずメモリ↔I/O間データ転 │ I/O処理の高速化  │
+  │  Access)           │ 送                              │                  │
+  ├────────────────────┼─────────────────────────────────┼──────────────────┤
+  │ 割り込みコントロー │ 複数の割り込み源を管理、優先度  │ マルチデバイス対 │
+  │ ラ                 │ 制御                            │ 応               │
+  └────────────────────┴─────────────────────────────────┴──────────────────┘
+
+  ---
+  4. ソフトウェア基盤・応用
+
+  難易度: 低〜中
+
+  ┌────────────┬──────────────────────────────────────┬────────────────────┐
+  │    項目    │                 内容                 │        効果        │
+  ├────────────┼──────────────────────────────────────┼────────────────────┤
+  │ アセンブラ │ PUSH/POP/CALL/RETをマクロで定義（sim │ プログラミングの生 │
+  │ マクロ     │ ple_assembler拡張）                  │ 産性向上           │
+  ├────────────┼──────────────────────────────────────┼────────────────────┤
+  │ リンカ     │ 複数ファイルのアセンブリを結合       │ 大規模プログラム対 │
+  │            │                                      │ 応                 │
+  ├────────────┼──────────────────────────────────────┼────────────────────┤
+  │ 応用プログ │ バブルソート/挿入ソートをSIMPLE上で  │                    │
+  │ ラム:      │ 実行                                 │ 性能ベンチマーク   │
+  │ ソート     │                                      │                    │
+  ├────────────┼──────────────────────────────────────┼────────────────────┤
+  │ 応用プログ │                                      │                    │
+  │ ラム: フィ │ 再帰/反復で計算し結果を表示          │ BAL/BR命令のデモ   │
+  │ ボナッチ   │                                      │                    │
+  ├────────────┼──────────────────────────────────────┼────────────────────┤
+  │ 応用プログ │                                      │ メモリアクセスパタ │
+  │ ラム:      │ エラトステネスのふるい               │ ーンの評価         │
+  │ 素数列挙   │                                      │                    │
+  └────────────┴──────────────────────────────────────┴────────────────────┘
+
+  難易度: 高
+
+  ┌───────────┬────────────────────────────────────────┬────────────────────┐
+  │   項目    │                  内容                  │        効果        │
+  ├───────────┼────────────────────────────────────────┼────────────────────┤
+  │ 簡易OS    │ タスク切替、割り込みハンドラ、I/Oドラ  │ システムソフトウェ │
+  │           │ イバ                                   │ アの実装経験       │
+  ├───────────┼────────────────────────────────────────┼────────────────────┤
+  │ Cコンパイ │ 呼出規約を定義し、lccやtcc等の軽量コン │ C言語でプログラム  │
+  │ ラ対応    │ パイラのバックエンドを作成             │ 記述可能           │
+  ├───────────┼────────────────────────────────────────┼────────────────────┤
+  │ ゲーム    │ テトリス・ライフゲーム等をLED/7セグで  │ デモとして非常に映 │
+  │           │ 実現                                   │ える               │
+  └───────────┴────────────────────────────────────────┴────────────────────┘
+
+  ---
+  おすすめの組み合わせ (中間→最終)
+
+  中間報告まで (現状で達成済み):
+  - 基本SIMPLE/B (5フェーズ順次実行) ✓
+
+  最終報告に向けた現実的な拡張セット:
+  1. BAL/BR命令 → 関数呼び出しを可能に
+  2. p1/p5並列 (4サイクル化) → 比較的容易に25%高速化
+  3. Block RAM化 + メモリ拡大 → 実用的なプログラムサイズ
+  4. タイマ + I/Oアドレス拡張 → ソフトウェア遅延不要
+  5. 応用プログラム (ソート or ゲーム) → デモで見栄え良し
+
+  この構成なら、命令セット拡張・マイクロアーキテクチャ改良・I/O拡張・応用プログ
+  ラムの全方面をカバーでき、最終レポートで独自性をアピールしやすいです。
+
+✻ Sautéed for 1m 33s

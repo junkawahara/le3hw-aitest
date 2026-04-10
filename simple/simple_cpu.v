@@ -1,9 +1,19 @@
-// simple_cpu.v - SIMPLE/B CPU コア
-// 5フェーズ順次実行: p1(IF) → p2(RR) → p3(EX) → p4(MA) → p5(WB)
+// simple_cpu.v - SIMPLE プロセッサ (拡張版)
 //
-// ブロック図 (SIMPLE設計資料 図2 準拠):
-//   PC → メモリ → IR → デコード → レジスタファイル(AR,BR)
-//   → ALU/シフタ → DR → メモリ/IO → MDR → レジスタ書き戻し
+// ■ マイクロアーキテクチャ: 4フェーズ実行 (SIMPLE/Bの5フェーズから高速化)
+//   PH1 (IF+WB): 命令フェッチ + 前命令のレジスタ書き戻し
+//   PH2 (RR):    レジスタ読み出し
+//   PH3 (EX):    演算 + ST書込み
+//   PH4 (MA):    メモリ読出し / IO / 分岐 / WB準備
+//
+// ■ ISA拡張 (基本アーキテクチャに追加):
+//   BAL Rb, d  (op2=001): r[Rb] = PC, PC = PC + sign_ext(d)  -- Branch And Link
+//   BR  Rb     (op2=010): PC = r[Rb]                          -- Branch Register
+//   ADDI Rb, d (op2=011): r[Rb] = r[Rb] + sign_ext(d)        -- Add Immediate
+//
+// ■ 同期RAM対応: アドレスを1フェーズ前に提示
+//   PH3: LD/ST用実効アドレス → PH4でデータ取得 / PH3→PH4でST書込み
+//   PH4: 次命令アドレス      → PH1で命令取得
 
 module simple_cpu(
     input         clk,
@@ -22,54 +32,77 @@ module simple_cpu(
     output        halted
 );
 
-// フェーズ定義
-localparam P1 = 3'd0; // 命令フェッチ
-localparam P2 = 3'd1; // レジスタ読み出し
-localparam P3 = 3'd2; // 演算
-localparam P4 = 3'd3; // 主記憶アクセス
-localparam P5 = 3'd4; // レジスタ書き込み
+// ---- フェーズ定義 (4サイクル) ----
+localparam PH1 = 2'd0; // IF + WB
+localparam PH2 = 2'd1; // RR
+localparam PH3 = 2'd2; // EX + ST write
+localparam PH4 = 2'd3; // MA / IO / Branch / WB setup
 
-// 内部レジスタ
+// ---- 内部レジスタ ----
 reg [15:0] pc, ir, ar, br, dr, mdr;
-reg [2:0]  phase;
+reg [1:0]  phase;
 reg        flag_s, flag_z, flag_c, flag_v;
 reg        running;
 
+// ---- 書き戻しパイプラインレジスタ ----
+reg        wb_rf_we;
+reg [2:0]  wb_rf_addr;
+reg [15:0] wb_rf_data;  // ALU/Shift/LI/ADDI/BAL 用
+reg        wb_use_mdr;  // LD/IN: MDR を使用
+
 // ---- 命令デコード ----
 wire [1:0] op1   = ir[15:14];
-wire [2:0] rs_ra = ir[13:11]; // Rs (演算) / Ra (LD/ST)
-wire [2:0] rd_rb = ir[10:8];  // Rd (演算) / Rb (LD/ST/LI)
-wire [3:0] op3   = ir[7:4];   // 演算/IO命令コード
-wire [3:0] d4    = ir[3:0];   // シフト桁数
-wire [7:0] d8    = ir[7:0];   // 即値/変位
-wire [2:0] op2   = ir[13:11]; // LI/B 命令コード
-wire [2:0] cond  = ir[10:8];  // 条件分岐条件
+wire [2:0] rs_ra = ir[13:11];
+wire [2:0] rd_rb = ir[10:8];
+wire [3:0] op3   = ir[7:4];
+wire [3:0] d4    = ir[3:0];
+wire [7:0] d8    = ir[7:0];
+wire [2:0] op2   = ir[13:11];
+wire [2:0] cond  = ir[10:8];
 
 wire [15:0] sext_d8 = {{8{d8[7]}}, d8};
 
-// 命令種別判定
+// 命令種別
 wire is_alu   = (op1 == 2'b11);
 wire is_load  = (op1 == 2'b00);
 wire is_store = (op1 == 2'b01);
 wire is_li    = (op1 == 2'b10) && (op2 == 3'b000);
+wire is_bal   = (op1 == 2'b10) && (op2 == 3'b001); // 拡張
+wire is_br    = (op1 == 2'b10) && (op2 == 3'b010); // 拡張
+wire is_addi  = (op1 == 2'b10) && (op2 == 3'b011); // 拡張
 wire is_b     = (op1 == 2'b10) && (op2 == 3'b100);
 wire is_bcc   = (op1 == 2'b10) && (op2 == 3'b111);
 
-wire is_shift  = is_alu && op3[3] && ~op3[2];           // 1000-1011
+wire is_shift  = is_alu && op3[3] && ~op3[2];       // 1000-1011
 wire is_in     = is_alu && (op3 == 4'b1100);
 wire is_out    = is_alu && (op3 == 4'b1101);
 wire is_hlt    = is_alu && (op3 == 4'b1111);
-wire is_alu_rr = is_alu && ~op3[3] &&
-                 (op3 != 4'b0111);                       // 0000-0110 (reserved除く)
+wire is_alu_rr = is_alu && ~op3[3] && (op3 != 4'b0111); // 0000-0110
+
+// 分岐判定
+reg branch_taken;
+always @(*) begin
+    case (cond)
+        3'b000:  branch_taken = flag_z;
+        3'b001:  branch_taken = flag_s ^ flag_v;
+        3'b010:  branch_taken = flag_z | (flag_s ^ flag_v);
+        3'b011:  branch_taken = ~flag_z;
+        default: branch_taken = 1'b0;
+    endcase
+end
+
+wire branch_go = is_b || is_bal || is_br || (is_bcc && branch_taken);
+
+// レジスタ書き込みが必要な命令
+wire need_rf_write = (is_alu_rr && op3 != 4'b0101) || // ALU (CMP除く)
+                     is_shift || is_load || is_li ||
+                     is_in || is_bal || is_addi;
 
 // ---- レジスタファイル ----
 wire [15:0] rf_rd0, rf_rd1;
-
-wire rf_we_need = (is_alu_rr && op3 != 4'b0101) ||       // ALU (CMP除く)
-                  is_shift || is_load || is_li || is_in;
-wire        rf_we      = (phase == P5) && running && rf_we_need;
-wire [2:0]  rf_wr_addr = is_load ? rs_ra : rd_rb;
-wire [15:0] rf_wr_data = (is_load || is_in) ? mdr : dr;
+wire        rf_we      = (phase == PH1) && running && wb_rf_we;
+wire [2:0]  rf_wr_addr = wb_rf_addr;
+wire [15:0] rf_wr_data = wb_use_mdr ? mdr : wb_rf_data;
 
 regfile rf(
     .clk(clk), .rst_n(rst_n),
@@ -79,9 +112,9 @@ regfile rf(
 );
 
 // ---- ALU ----
-wire [15:0] alu_a = is_li           ? 16'h0000 :
-                    (is_b || is_bcc) ? pc       :
-                                       br;
+wire [15:0] alu_a = is_li            ? 16'h0000 :
+                    (is_b || is_bcc || is_bal) ? pc :
+                                        br;
 wire [15:0] alu_b = is_alu ? ar : sext_d8;
 wire [3:0]  alu_op = is_alu ? op3 : 4'h0; // 非ALU命令はADD
 
@@ -103,33 +136,18 @@ shifter shift_inst(
     .result(shift_result), .flag_c(shift_c)
 );
 
-// ---- メモリインタフェース (組み合わせ) ----
-// 同期RAM対応: アドレスを1フェーズ前に提示する
-//   P5 で次命令アドレス(PC or 分岐先)を提示 → P1 で命令データ取得
-//   P3 で実効アドレスを提示               → P4 で LD データ取得
-//   P4 で DR を提示 + wren=1             → P4→P5 エッジで ST 書込み
-wire [15:0] next_pc_val = (is_b || (is_bcc && branch_taken)) ? dr : pc;
+// ---- メモリインタフェース ----
+// 同期RAM: PH3でアドレス提示 → PH4でデータ取得 / PH3→PH4でST書込み
+//          PH4でnext_pc提示 → PH1で命令取得
+wire [15:0] next_pc_val = branch_go ? dr : pc;
 
-assign mem_addr  = (phase == P3 && (is_load || is_store)) ? alu_result :
-                   (phase == P4 && is_store)               ? dr        :
-                   (phase == P5)                           ? next_pc_val :
-                                                             pc;
+assign mem_addr  = (phase == PH3 && (is_load || is_store)) ? alu_result :
+                   (phase == PH4)                           ? next_pc_val :
+                                                              pc;
 assign mem_wdata = ar;
-assign mem_we    = (phase == P4) && running && is_store;
+assign mem_we    = (phase == PH3) && running && is_store;
 
-// ---- 分岐条件判定 ----
-reg branch_taken;
-always @(*) begin
-    case (cond)
-        3'b000:  branch_taken = flag_z;                      // BE
-        3'b001:  branch_taken = flag_s ^ flag_v;             // BLT
-        3'b010:  branch_taken = flag_z | (flag_s ^ flag_v);  // BLE
-        3'b011:  branch_taken = ~flag_z;                     // BNE
-        default: branch_taken = 1'b0;
-    endcase
-end
-
-// ---- ステータス出力 ----
+// ---- ステータス ----
 assign halted = ~running;
 
 // ---- exec 立ち上がり検出 ----
@@ -140,23 +158,27 @@ always @(posedge clk or negedge rst_n) begin
 end
 wire exec_rise = exec & ~exec_prev;
 
-// ---- メインステートマシン ----
+// ======== メインFSM ========
 always @(posedge clk or negedge rst_n) begin
     if (~rst_n) begin
-        pc       <= 16'h0000;
-        ir       <= 16'h0000;
-        ar       <= 16'h0000;
-        br       <= 16'h0000;
-        dr       <= 16'h0000;
-        mdr      <= 16'h0000;
-        phase    <= P1;
-        flag_s   <= 1'b0;
-        flag_z   <= 1'b0;
-        flag_c   <= 1'b0;
-        flag_v   <= 1'b0;
-        running  <= 1'b0;
-        out_data <= 16'h0000;
-        out_we   <= 1'b0;
+        pc          <= 16'h0000;
+        ir          <= 16'h0000;
+        ar          <= 16'h0000;
+        br          <= 16'h0000;
+        dr          <= 16'h0000;
+        mdr         <= 16'h0000;
+        phase       <= PH1;
+        flag_s      <= 1'b0;
+        flag_z      <= 1'b0;
+        flag_c      <= 1'b0;
+        flag_v      <= 1'b0;
+        running     <= 1'b0;
+        out_data    <= 16'h0000;
+        out_we      <= 1'b0;
+        wb_rf_we    <= 1'b0;
+        wb_rf_addr  <= 3'd0;
+        wb_rf_data  <= 16'h0000;
+        wb_use_mdr  <= 1'b0;
     end else begin
         out_we <= 1'b0;
 
@@ -165,28 +187,32 @@ always @(posedge clk or negedge rst_n) begin
 
         if (running) begin
             case (phase)
-                // ---- p1: 命令フェッチ ----
-                P1: begin
+                // ============ PH1: 命令フェッチ + 書き戻し ============
+                // IR ← mem[next_pc] (PH4で提示済み)
+                // WB: rf_we は組み合わせ信号、このエッジでレジスタに書込み
+                PH1: begin
                     ir    <= mem_rdata;
                     pc    <= pc + 16'd1;
-                    phase <= P2;
+                    phase <= PH2;
                 end
 
-                // ---- p2: レジスタ読み出し ----
-                P2: begin
+                // ============ PH2: レジスタ読み出し ============
+                PH2: begin
                     ar    <= rf_rd0; // r[Rs/Ra]
                     br    <= rf_rd1; // r[Rd/Rb]
-                    phase <= P3;
+                    phase <= PH3;
                 end
 
-                // ---- p3: 演算 ----
-                P3: begin
+                // ============ PH3: 演算 + ST書込み ============
+                PH3: begin
+                    // DR ← 演算結果
                     if (is_shift)
                         dr <= shift_result;
                     else
                         dr <= alu_result;
 
-                    if (is_alu_rr) begin
+                    // 条件コード更新
+                    if (is_alu_rr || is_addi) begin
                         flag_s <= alu_s;
                         flag_z <= alu_z;
                         flag_c <= alu_c;
@@ -198,31 +224,43 @@ always @(posedge clk or negedge rst_n) begin
                         flag_v <= 1'b0;
                     end
 
-                    phase <= P4;
+                    // ST: mem_we=1 (組み合わせ)、PH3→PH4エッジで書込み
+                    phase <= PH4;
                 end
 
-                // ---- p4: 主記憶アクセス / 入出力 ----
-                P4: begin
+                // ============ PH4: メモリ読出し / IO / 分岐 / WB準備 ============
+                PH4: begin
+                    // LD: MDR ← mem[DR] (PH3でアドレス提示済み)
                     if (is_load)
                         mdr <= mem_rdata;
+
+                    // IN / OUT
                     if (is_in)
                         mdr <= in_data;
                     if (is_out) begin
                         out_data <= ar;
                         out_we   <= 1'b1;
                     end
-                    phase <= P5;
-                end
 
-                // ---- p5: レジスタ書き込み / 分岐 ----
-                P5: begin
-                    if (is_b)
+                    // 分岐: PC更新
+                    if (branch_go)
                         pc <= dr;
-                    if (is_bcc && branch_taken)
-                        pc <= dr;
+
+                    // HLT
                     if (is_hlt)
                         running <= 1'b0;
-                    phase <= P1;
+
+                    // 書き戻し情報をパイプラインレジスタに保存
+                    wb_rf_we   <= need_rf_write;
+                    wb_rf_addr <= is_load ? rs_ra : rd_rb;
+                    wb_use_mdr <= (is_load || is_in);
+                    if (is_bal)
+                        wb_rf_data <= pc; // 戻りアドレス (= 命令アドレス + 1)
+                    else
+                        wb_rf_data <= dr;
+
+                    // PH4→PH1エッジ: RAMが next_pc_val をキャプチャ
+                    phase <= PH1;
                 end
             endcase
         end
