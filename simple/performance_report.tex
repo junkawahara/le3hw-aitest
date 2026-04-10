@@ -1,0 +1,436 @@
+\documentclass[a4paper,11pt]{ltjsarticle}
+\usepackage{geometry}
+\geometry{top=25mm,bottom=25mm,left=25mm,right=25mm}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{longtable}
+\usepackage{array}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red},
+  numbers=left, numberstyle=\tiny\color{gray}, numbersep=5pt,
+  frame=single, breaklines=true, tabsize=4, showstringspaces=false, captionpos=b
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{計算機科学実験及演習3 ハードウェア — 性能評価報告書}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% 実測値プレースホルダ用コマンド
+\newcommand{\measured}[1]{\textcolor{red}{\textbf{【要実測】#1}}}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\LARGE 計算機科学実験及演習3 ハードウェア}\\[1cm]
+{\Huge\bfseries 性能評価報告書}\\[0.5cm]
+{\LARGE SIMPLE/B 拡張プロセッサの性能分析}\\[2cm]
+{\large\color{red} ※ 赤色の箇所は Quartus コンパイル結果・実機測定で得た値を記入すること}\\[2cm]
+\begin{tabular}{rl}
+学籍番号 & （学籍番号を記入） \\[0.5em]
+氏名     & （氏名を記入） \\[0.5em]
+提出日   & 2026年6月5日 \\
+\end{tabular}
+\vfill
+京都大学 工学部情報学科 計算機科学コース
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+
+% =====================================================================
+\section{評価概要}
+
+本報告書では、SIMPLE/B拡張プロセッサの性能を以下の観点から評価する。
+
+\begin{enumerate}
+\item \textbf{命令実行性能}: CPI（Cycles Per Instruction）とスループット
+\item \textbf{回路規模}: 使用Logic Element数、メモリビット数
+\item \textbf{最大動作周波数}: Timing Analyzerによる Fmax
+\item \textbf{クリティカルパス分析}: ボトルネックとなるパスの特定
+\item \textbf{アプリケーション性能}: バブルソートの実行時間
+\item \textbf{基本設計との比較}: 拡張による改善度
+\end{enumerate}
+
+
+% =====================================================================
+\section{命令実行性能}
+
+\subsection{CPI分析}
+
+本プロセッサは全命令が固定4サイクルで実行される
+（基本設計の5サイクルから1サイクル削減）。
+パイプライン化は行っていないため、CPI = 4.0 である。
+
+\begin{table}[h]
+\centering
+\caption{CPI の比較}
+\begin{tabular}{lcc}
+\toprule
+項目 & 基本設計 (SIMPLE/B) & 拡張設計 \\
+\midrule
+CPI & 5.0 & 4.0 \\
+性能向上率 & --- & +25\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{スループット}
+
+20 MHz クロックにおける理論スループット:
+
+\[
+\text{スループット} = \frac{f_{\mathrm{clk}}}{\mathrm{CPI}} = \frac{20\,\mathrm{MHz}}{4} = 5\,\mathrm{MIPS}
+\]
+
+基本設計（4 MIPS）に対して25\%の向上。
+
+\subsection{ISA拡張による命令数削減の効果}
+
+ADDI命令により典型的なループのオーバーヘッドが削減される。
+
+\begin{table}[h]
+\centering
+\caption{ループ内命令数の比較}
+\begin{tabular}{lcc}
+\toprule
+処理パターン & 基本ISA & 拡張ISA \\
+\midrule
+カウンタ+1 (LI+ADD vs ADDI) & 2命令 (10cyc) & 1命令 (4cyc) \\
+カウンタ+1 + 条件分岐 & 4命令 (20cyc) & 2命令 (8cyc) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% =====================================================================
+\section{回路規模}
+
+\subsection{Quartus Primeコンパイル結果}
+
+\measured{Quartus Prime の Compilation Report $\to$ Fitter $\to$ Resource Section の値を記入}
+
+\begin{table}[h]
+\centering
+\caption{回路規模}
+\begin{tabular}{lcc}
+\toprule
+リソース & 使用量 & 利用可能 \\
+\midrule
+Total Logic Elements     & \measured{LE数}   & 28,848 \\
+Total Registers          & \measured{FF数}   & --- \\
+Total Memory Bits        & \measured{メモリビット数} & 594,432 \\
+Total PLLs               & \measured{PLL数}  & 2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{モジュール別の規模}
+
+\measured{各モジュールの Logic Element 使用数を確認するには、
+Compilation Report $\to$ Fitter $\to$ Resource Utilization by Entity を参照}
+
+\begin{table}[h]
+\centering
+\caption{モジュール別回路規模（概算）}
+\begin{tabular}{lcc}
+\toprule
+モジュール & 概算LE数 & 備考 \\
+\midrule
+\texttt{simple\_cpu} & \measured{CPU LE数} & FSM + データパス \\
+\texttt{alu}         & \measured{ALU LE数} & 16ビット加減算 + 論理演算 \\
+\texttt{shifter}     & \measured{シフタ LE数} & バレルシフタ \\
+\texttt{regfile}     & \measured{レジスタファイル LE数} & 8$\times$16ビット \\
+\texttt{timer}       & \measured{タイマ LE数} & 8+16ビットカウンタ \\
+\texttt{simple\_top} (I/Oデコード+7セグ) & \measured{トップ LE数} & MUX + 表示制御 \\
+\texttt{ram} (Block RAM) & 0 LE & 専用RAMブロック使用 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{ISA拡張の回路コスト}
+
+\begin{table}[h]
+\centering
+\caption{拡張機能の回路コスト見積り}
+\begin{tabular}{lp{5cm}p{5cm}}
+\toprule
+拡張項目 & 追加回路 & 理論コスト \\
+\midrule
+BAL命令 & ALU入力Aマルチプレクサ拡張、WBデータ選択追加 & 約20 LE \\
+BR命令 & 分岐条件に\texttt{is\_br}追加 & 約5 LE \\
+ADDI命令 & ALU入力A選択拡張、フラグ更新条件拡張 & 約15 LE \\
+タイマ & 8+16ビットカウンタ、制御レジスタ & 約80 LE \\
+I/Oデコード & 入出力マルチプレクサ & 約40 LE \\
+8桁7セグ & 3ビット桁選択、32ビットMUX & 約30 LE \\
+\midrule
+\textbf{拡張合計} & & \textbf{約190 LE} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\measured{上記の理論見積りと実測値を比較し、差異がある場合はその原因を考察すること}
+
+
+% =====================================================================
+\section{最大動作周波数}
+
+\subsection{Timing Analyzer の結果}
+
+\measured{Quartus Prime の TimeQuest Timing Analyzer (Compilation Report $\to$ Timing Analyzer $\to$ Slow 1200mV 85C Model $\to$ Fmax Summary) の値を記入}
+
+\begin{table}[h]
+\centering
+\caption{最大動作周波数}
+\begin{tabular}{lc}
+\toprule
+条件 & Fmax \\
+\midrule
+Slow 1200mV 85C Model & \measured{Fmax (Slow) MHz} \\
+Slow 1200mV 0C Model  & \measured{Fmax (Slow 0C) MHz} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+設計目標の 20 MHz に対するマージン:
+
+\[
+\text{マージン} = \frac{F_{\max} - 20\,\mathrm{MHz}}{20\,\mathrm{MHz}} \times 100 = \measured{マージン (\%)}
+\]
+
+\subsection{クリティカルパスの特定}
+
+\measured{Timing Analyzer $\to$ Slow Model $\to$ Setup Summary から
+最もスラックの小さいパスを特定し、以下に記入}
+
+\begin{table}[h]
+\centering
+\caption{クリティカルパス}
+\begin{tabular}{lp{10cm}}
+\toprule
+項目 & 内容 \\
+\midrule
+From & \measured{パスの起点レジスタ名} \\
+To   & \measured{パスの終点レジスタ名} \\
+Data Delay & \measured{データ遅延 (ns)} \\
+Setup Slack & \measured{セットアップスラック (ns)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{クリティカルパスの考察}
+
+\measured{クリティカルパスがどのモジュール内/モジュール間に存在し、
+なぜそこがボトルネックになるのかを考察する。以下は想定される候補:}
+
+想定されるクリティカルパスの候補:
+
+\begin{itemize}
+\item \textbf{PH3のALU演算パス}: 命令デコード $\to$ ALU入力選択 $\to$ ALU演算 $\to$ DR ラッチ。
+  16ビット加算器のキャリー伝搬が律速要因となりうる。
+\item \textbf{PH4のメモリアドレス選択}: \texttt{next\_pc\_val}計算（分岐判定 $\to$ MUX）
+  $\to$ RAMアドレスラッチ。分岐条件の組み合わせ論理深さが影響。
+\item \textbf{PH1のレジスタ書き戻し}: パイプラインレジスタ $\to$ MDR/DR選択 $\to$ レジスタファイル書込み。
+\end{itemize}
+
+\measured{実際のクリティカルパスに基づいて、上記のうちどれが該当するか、
+または別のパスが該当するかを記述すること}
+
+
+% =====================================================================
+\section{アプリケーション性能}
+
+\subsection{バブルソートの実行サイクル数}
+
+\subsubsection{理論分析}
+
+バブルソートプログラム（58語、16要素）の実行サイクル数を分析する。
+
+\begin{table}[h]
+\centering
+\caption{バブルソートの命令数内訳}
+\begin{tabular}{lrr}
+\toprule
+処理部分 & 命令数 & サイクル数 (4cyc/命令) \\
+\midrule
+データ初期化 (LI+ST $\times$ 16 + LI r0) & 33 & 132 \\
+外側ループ制御 (LI+ADDI+BNE $\times$ 15) & 45 & 180 \\
+内側ループ1回 (MOV+ADD+LD+LD+CMP+BLE+ADDI+CMP+BLT) & 9--11 & 36--44 \\
+swap発生時の追加 (ST+ST) & 2 & 8 \\
+結果表示 (MOV+ADD+LD+OUT+ADDI+CMP+BLT $\times$ 16) & 112 & 448 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+内側ループの総反復回数: $\sum_{i=1}^{15} i = 120$ 回。
+
+最悪ケース（全swap発生）の総サイクル数:
+\[
+132 + 180 + 120 \times 44 + 120 \times 8 + 448 = 7{,}000 \text{ サイクル}
+\]
+
+20 MHzでの実行時間: $7{,}000 \times 4 / 20{,}000{,}000 \approx 350\,\mu$s（理論値）。
+
+\subsubsection{シミュレーション計測}
+
+\measured{iverilog シミュレーションで実際の実行サイクル数を計測する。
+テストベンチに \texttt{\$time} 表示を追加し、exec から HLT までの時間を測定。
+以下の値を記入:}
+
+\begin{table}[h]
+\centering
+\caption{バブルソートの実行時間（シミュレーション）}
+\begin{tabular}{lc}
+\toprule
+項目 & 値 \\
+\midrule
+実行開始時刻 & \measured{exec立ち上がりの \$time (ns)} \\
+HLT時刻      & \measured{halted信号立ち上がりの \$time (ns)} \\
+実行時間      & \measured{差分 (ns)} \\
+実行サイクル数 & \measured{= 実行時間 / 50ns} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{実機計測}
+
+\measured{ハードウェアタイマを使ってバブルソート本体の実行時間を計測する。
+タイマ開始$\to$ソート$\to$タイマ停止$\to$COUNT読出しの手順で実測値を得る。
+以下の値を記入:}
+
+\begin{table}[h]
+\centering
+\caption{バブルソートの実行時間（実機タイマ計測）}
+\begin{tabular}{lc}
+\toprule
+項目 & 値 \\
+\midrule
+PRESCALER設定 & \measured{使用したプリスケーラ値} \\
+COUNT読出し値 & \measured{タイマCOUNT値} \\
+計測時間 & \measured{$= \mathrm{COUNT} \times (\mathrm{PRESCALER}+1) / 20\,\mathrm{MHz}$} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\measured{理論値・シミュレーション値・実機計測値を比較し、
+差異がある場合はその原因を考察すること}
+
+\subsection{基本設計との性能比較}
+
+\begin{table}[h]
+\centering
+\caption{基本設計 vs 拡張設計のバブルソート性能}
+\begin{tabular}{lcc}
+\toprule
+項目 & 基本設計 (5cyc, 基本ISA) & 拡張設計 (4cyc, 拡張ISA) \\
+\midrule
+CPI & 5 & 4 \\
+ソート内側ループ命令数 & 約14命令 & 11命令 \\
+ソート内側1回のサイクル数 & 70 & 44 \\
+ソート総サイクル数（見積り）& 約10,500 & 約7,000 \\
+実行時間（@20MHz） & 約525 $\mu$s & 約350 $\mu$s \\
+\textbf{高速化率} & --- & \textbf{約1.5倍} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+4サイクル化（25\%向上）と ISA拡張による命令数削減（約21\%削減）の
+複合効果により、約1.5倍の高速化を達成している。
+
+
+% =====================================================================
+\section{タイマの精度検証}
+
+\measured{タイマの精度をオシロスコープまたは既知の遅延と比較して検証する。
+以下の手順で実測値を取得:}
+
+\begin{enumerate}
+\item ソフトウェア遅延ループ（既知のサイクル数）をタイマで計測
+\item 理論値と計測値を比較し、誤差率を算出
+\end{enumerate}
+
+\begin{table}[h]
+\centering
+\caption{タイマ精度の検証}
+\begin{tabular}{lccc}
+\toprule
+テスト & 理論サイクル数 & タイマ計測値 & 誤差率 \\
+\midrule
+空ループ 100回 & 400 cyc & \measured{COUNT値} & \measured{\%} \\
+空ループ 10000回 & 40000 cyc & \measured{COUNT値} & \measured{\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\measured{誤差の原因を考察すること（タイマ開始/停止のオーバーヘッド、
+プリスケーラの端数等）}
+
+
+% =====================================================================
+\section{Quartus コンパイルレポートの確認事項}
+
+\measured{以下の項目を Quartus Prime のコンパイルレポートから確認し、
+問題がある場合は対処すること:}
+
+\begin{enumerate}
+\item \textbf{Critical Warning}: 未接続ピン以外の Critical Warning がないこと
+
+  \measured{Critical Warning の有無と内容を記入}
+
+\item \textbf{タイミング制約の充足}: 全タイミング制約が満たされていること
+
+  \measured{SDCファイルでのクロック制約: \texttt{create\_clock -period 50.0 [get\_ports clk]}
+  の設定結果を記入。TimeQuest の Summary で全制約が met であることを確認}
+
+\item \textbf{Fmax とクロック周波数の関係}: $F_{\max} > 20\,\mathrm{MHz}$ であること
+
+  \measured{Fmax $> 20$ MHz であるか確認し記入}
+\end{enumerate}
+
+
+% =====================================================================
+\section{まとめ}
+
+\subsection{性能評価の総括}
+
+\begin{table}[h]
+\centering
+\caption{性能評価サマリ}
+\begin{tabular}{lcc}
+\toprule
+指標 & 基本設計 & 拡張設計 \\
+\midrule
+CPI & 5.0 & 4.0 \\
+スループット (@20MHz) & 4 MIPS & 5 MIPS \\
+回路規模 (LE) & \measured{基本LE数} & \measured{拡張LE数} \\
+Fmax & \measured{基本Fmax} & \measured{拡張Fmax} \\
+バブルソート実行時間 & 約525 $\mu$s (見積り) & \measured{実測値} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{考察}
+
+4サイクル化とISA拡張の複合効果により、バブルソートベンチマークで約1.5倍の
+性能向上を達成した。回路規模の増加は拡張機能分（約190 LE見積り）に留まり、
+Cyclone IV の利用可能Logic Elementsに対しては十分に小さい。
+
+\measured{実測の Fmax が20 MHzを十分に上回っているか、
+クリティカルパスのボトルネックは何か、
+回路規模と性能のトレードオフは適切かについて、
+実測データに基づく考察を追記すること}
+
+
+\end{document}

@@ -1,0 +1,547 @@
+\documentclass[a4paper,11pt]{ltjsarticle}
+\usepackage{geometry}
+\geometry{top=25mm,bottom=25mm,left=25mm,right=25mm}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{longtable}
+\usepackage{array}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red},
+  numbers=left, numberstyle=\tiny\color{gray}, numbersep=5pt,
+  frame=single, breaklines=true, tabsize=4, showstringspaces=false, captionpos=b
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{計算機科学実験及演習3 ハードウェア — ユーザーズマニュアル}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\LARGE 計算機科学実験及演習3 ハードウェア}\\[1cm]
+{\Huge\bfseries ユーザーズマニュアル}\\[0.5cm]
+{\LARGE SIMPLE/B 拡張プロセッサシステム}\\[3cm]
+\begin{tabular}{rl}
+学籍番号 & （学籍番号を記入） \\[0.5em]
+氏名     & （氏名を記入） \\[0.5em]
+提出日   & 2026年6月5日 \\
+\end{tabular}
+\vfill
+京都大学 工学部情報学科 計算機科学コース
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+
+% =====================================================================
+\section{システム概要}
+
+本プロセッサシステムは SIMPLE アーキテクチャ（ver 4.0）に基づく16ビットプロセッサであり、
+以下の拡張を施している。
+
+\begin{itemize}
+\item 4サイクル実行方式（基本5サイクルから25\%高速化）
+\item ISA拡張: BAL（サブルーチン呼出）、BR（間接ジャンプ）、ADDI（即値加算）
+\item ハードウェアタイマ（プリスケーラ付き16ビットカウンタ）
+\item I/Oアドレス空間（最大16ポート、6ポート実装済み）
+\item 8桁7セグメントLED表示（4モード切替）
+\item LED出力（8ビット）
+\end{itemize}
+
+\subsection{対象ハードウェア}
+
+\begin{table}[h]
+\centering
+\caption{ハードウェア仕様}
+\begin{tabular}{ll}
+\toprule
+項目 & 内容 \\
+\midrule
+FPGAボード & PowerMedusa MU500-RX/RK \\
+FPGA & Altera Cyclone IV EP4CE30F23I7N \\
+クロック & 20 MHz 発振器 \\
+主記憶 & Block RAM 4096語 $\times$ 16ビット \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% =====================================================================
+\section{操作方法}
+
+\subsection{起動と実行}
+
+\begin{enumerate}
+\item FPGAボードの電源を投入する
+\item Quartus PrimeからFPGAにプログラムを書き込む（\texttt{.sof}ファイル）
+\item リセットボタン（\texttt{rst\_n}、負論理）を押して初期化する
+\item 実行ボタン（\texttt{exec}、正論理）を押すとプログラムが実行開始する
+\item HLT命令でプロセッサが停止する。再実行するにはリセット後に再度execを押す
+\end{enumerate}
+
+\subsection{入力デバイス}
+
+\begin{table}[h]
+\centering
+\caption{入力デバイス一覧}
+\begin{tabular}{lll}
+\toprule
+デバイス & 接続 & 備考 \\
+\midrule
+DIPスイッチ A (SW26) & \texttt{sw[7:0]} & 負論理 (ON=0)、I/Oポート0で読出し \\
+DIPスイッチ B (SW27) & \texttt{sw[15:8]} & 負論理 (ON=0)、I/Oポート1で読出し \\
+プッシュスイッチ     & \texttt{pushsw[3:0]} & 負論理 (押下=0)、I/Oポート4で読出し \\
+ロータリースイッチ   & \texttt{rotsw[3:0]} & I/Oポート5で読出し、表示モード切替兼用 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{出力デバイス}
+
+\begin{table}[h]
+\centering
+\caption{出力デバイス一覧}
+\begin{tabular}{lll}
+\toprule
+デバイス & 接続 & 備考 \\
+\midrule
+7セグメントLED & \texttt{seg[7:0]}, \texttt{sel[7:0]} & 8桁HEX表示、ダイナミック点灯 \\
+LED            & \texttt{led[7:0]} & I/Oポート4で書込み \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{7セグメント表示モード}
+
+ロータリースイッチの下位2ビットで表示内容を切り替える。
+
+\begin{table}[h]
+\centering
+\caption{7セグ表示モード}
+\begin{tabular}{ccl}
+\toprule
+ロータリー値 & モード & 表示内容 \\
+\midrule
+0 & OUT値表示 & OUTポート0/1の値を8桁HEX表示（デフォルト） \\
+1 & PC表示   & プログラムカウンタの値（デバッグ用） \\
+2 & レジスタ表示 & r0\textasciitilde r3の下位8ビットを各2桁で表示 \\
+3 & タイマ表示 & タイマCOUNT値 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% =====================================================================
+\section{命令セットリファレンス}
+
+\subsection{命令形式}
+
+全命令は16ビット固定長であり、4種類の形式を持つ。
+
+\begin{table}[h]
+\centering
+\caption{命令形式}
+\begin{tabular}{llp{7cm}}
+\toprule
+形式 & ビット配置 & 用途 \\
+\midrule
+(a) & \texttt{11|Rs(3)|Rd(3)|op3(4)|d(4)} & 演算, シフト, IN/OUT, HLT \\
+(b) & \texttt{op1(2)|Ra(3)|Rb(3)|d(8)} & LD (op1=00), ST (op1=01) \\
+(c) & \texttt{10|op2(3)|Rb(3)|d(8)} & LI, BAL, BR, ADDI, B \\
+(d) & \texttt{10|111|cond(3)|d(8)} & Bcc (条件分岐) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{レジスタ}
+
+8本の汎用レジスタ \texttt{r0}\textasciitilde\texttt{r7}（各16ビット）を持つ。
+慣例として \texttt{r7} をBAL命令のリンクレジスタとして使用する。
+
+\subsection{演算命令}
+
+\begin{longtable}{llp{6cm}l}
+\caption{演算命令一覧} \label{tab:alu_ops} \\
+\toprule
+ニーモニック & op3 & 動作 & フラグ \\
+\midrule
+\endfirsthead
+\toprule
+ニーモニック & op3 & 動作 & フラグ \\
+\midrule
+\endhead
+\texttt{ADD Rd, Rs} & 0000 & \texttt{r[Rd] = r[Rd] + r[Rs]} & S,Z,C,V \\
+\texttt{SUB Rd, Rs} & 0001 & \texttt{r[Rd] = r[Rd] - r[Rs]} & S,Z,C,V \\
+\texttt{AND Rd, Rs} & 0010 & \texttt{r[Rd] = r[Rd] \& r[Rs]} & S,Z \\
+\texttt{OR Rd, Rs}  & 0011 & \texttt{r[Rd] = r[Rd] | r[Rs]} & S,Z \\
+\texttt{XOR Rd, Rs} & 0100 & \texttt{r[Rd] = r[Rd] \^{} r[Rs]} & S,Z \\
+\texttt{CMP Rd, Rs} & 0101 & \texttt{r[Rd] - r[Rs]}（フラグのみ） & S,Z,C,V \\
+\texttt{MOV Rd, Rs} & 0110 & \texttt{r[Rd] = r[Rs]} & S,Z \\
+\midrule
+\texttt{SLL Rd, d}  & 1000 & 左論理シフト & S,Z,C \\
+\texttt{SLR Rd, d}  & 1001 & 左循環シフト & S,Z \\
+\texttt{SRL Rd, d}  & 1010 & 右論理シフト & S,Z,C \\
+\texttt{SRA Rd, d}  & 1011 & 右算術シフト & S,Z,C \\
+\midrule
+\texttt{IN Rd, port} & 1100 & \texttt{r[Rd] = input[port]} & --- \\
+\texttt{OUT Rs, port} & 1101 & \texttt{output[port] = r[Rs]} & --- \\
+\texttt{HLT}         & 1111 & 実行停止 & --- \\
+\bottomrule
+\end{longtable}
+
+\subsection{メモリアクセス命令}
+
+\begin{table}[h]
+\centering
+\caption{ロード/ストア命令}
+\begin{tabular}{lp{8cm}}
+\toprule
+ニーモニック & 動作 \\
+\midrule
+\texttt{LD Ra, d(Rb)} & \texttt{r[Ra] = mem[r[Rb] + sign\_ext(d)]} \\
+\texttt{ST Ra, d(Rb)} & \texttt{mem[r[Rb] + sign\_ext(d)] = r[Ra]} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+変位 \texttt{d} は8ビット符号付き（$-128$\textasciitilde$+127$）。
+
+\subsection{即値・分岐命令}
+
+\begin{table}[h]
+\centering
+\caption{即値・分岐命令}
+\begin{tabular}{llp{7cm}}
+\toprule
+ニーモニック & op2 & 動作 \\
+\midrule
+\texttt{LI Rb, d}     & 000 & \texttt{r[Rb] = sign\_ext(d)} \\
+\texttt{B d}           & 100 & \texttt{PC = PC + 1 + sign\_ext(d)} \\
+\texttt{BE/BLT/BLE/BNE d} & 111 & 条件成立時 \texttt{PC = PC + 1 + sign\_ext(d)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{条件分岐の条件}
+
+\begin{table}[h]
+\centering
+\caption{条件分岐コード}
+\begin{tabular}{lll}
+\toprule
+ニーモニック & cond & 条件 \\
+\midrule
+\texttt{BE}  & 000 & Z = 1 （等しい） \\
+\texttt{BLT} & 001 & S $\oplus$ V = 1 （符号付き小なり） \\
+\texttt{BLE} & 010 & Z $\vee$ (S $\oplus$ V) = 1 （符号付き以下） \\
+\texttt{BNE} & 011 & Z = 0 （等しくない） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{拡張命令}
+
+\begin{table}[h]
+\centering
+\caption{ISA拡張命令}
+\begin{tabular}{llp{7cm}l}
+\toprule
+ニーモニック & op2 & 動作 & フラグ \\
+\midrule
+\texttt{BAL Rb, d} & 001 & \texttt{r[Rb] = PC; PC = PC + 1 + sign\_ext(d)} & --- \\
+\texttt{BR Rb}     & 010 & \texttt{PC = r[Rb]} & --- \\
+\texttt{ADDI Rb, d}& 011 & \texttt{r[Rb] = r[Rb] + sign\_ext(d)} & S,Z,C,V \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{BAL/BR の使い方}
+
+\texttt{BAL} はサブルーチン呼び出しに、\texttt{BR} はサブルーチンからの復帰に使用する。
+
+\begin{lstlisting}[language={},caption={サブルーチン呼出の例}]
+; メインプログラム
+        BAL  r7, sub       ; sub を呼び出し (r7 = 戻りアドレス)
+        OUT  r0             ; sub から戻った後に実行される
+        HLT
+
+; サブルーチン
+sub:    LI   r0, 42
+        BR   r7             ; r7 の値 (=呼出元の次の命令) に戻る
+\end{lstlisting}
+
+
+% =====================================================================
+\section{I/Oポートマップ}
+
+IN/OUT 命令の第2オペランドでポート番号を指定する。
+省略時はポート0が使用される（後方互換）。
+
+\begin{table}[h]
+\centering
+\caption{I/Oポートマップ}
+\begin{tabular}{clll}
+\toprule
+ポート & IN (読み出し) & OUT (書き込み) & アセンブラ記法 \\
+\midrule
+0 & DIPスイッチ A (8bit) & 7セグ出力 下位16bit & \texttt{IN r0, 0} \\
+1 & DIPスイッチ B (8bit) & 7セグ出力 上位16bit & \texttt{IN r0, 1} \\
+2 & タイマ COUNT値 (16bit)  & タイマ CTRL レジスタ & \texttt{OUT r0, 2} \\
+3 & タイマ overflow (bit0)  & タイマ LIMIT 値      & \texttt{OUT r0, 3} \\
+4 & プッシュスイッチ (4bit) & LED出力 (8bit)       & \texttt{OUT r0, 4} \\
+5 & ロータリースイッチ (4bit) & (予約)             & \texttt{IN r0, 5} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% =====================================================================
+\section{タイマの使い方}
+
+\subsection{レジスタ}
+
+\begin{table}[h]
+\centering
+\caption{タイマレジスタ}
+\begin{tabular}{lclp{6cm}}
+\toprule
+レジスタ & ポート & R/W & 説明 \\
+\midrule
+COUNT    & IN 2  & R & 現在のカウント値（16ビット） \\
+CTRL     & OUT 2 & W & bit0: 動作(1)/停止(0), bit1: リセット, bit[15:8]: プリスケーラ \\
+LIMIT    & OUT 3 & W & カウント上限値 \\
+overflow & IN 3  & R & bit0: 上限到達フラグ (読出しで自動クリア) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{プリスケーラ}
+
+カウント周波数 $= 20\,\mathrm{MHz} \div (\mathrm{PRESCALER} + 1)$。
+
+\begin{itemize}
+\item PRESCALER = 0: 20 MHz（50 ns 間隔）
+\item PRESCALER = 19: 1 MHz（1 $\mu$s 間隔）
+\item PRESCALER = 199: 100 kHz（10 $\mu$s 間隔）
+\end{itemize}
+
+\subsection{使用例: 時間計測}
+
+\begin{lstlisting}[language={},caption={タイマによる実行時間計測}]
+; タイマ初期化
+        LI   r1, 0xFF       ; LIMIT = 0x00FF (上位=0)
+        OUT  r1, 3           ; LIMIT レジスタに設定
+
+; カウント開始 (プリスケーラ=0, 20MHz)
+        LI   r1, 1           ; CTRL: bit0=1 (動作開始)
+        OUT  r1, 2
+
+; ... (計測対象の処理) ...
+
+; カウント値読出し
+        IN   r0, 2           ; r0 = COUNT値
+        OUT  r0              ; 7セグに表示
+
+; タイマ停止
+        LI   r1, 0
+        OUT  r1, 2           ; CTRL = 0 (停止)
+\end{lstlisting}
+
+\subsection{使用例: 一定時間待ち}
+
+\begin{lstlisting}[language={},caption={タイマによる一定時間待ち}]
+; LIMIT=9999, プリスケーラ=199 で 1秒タイマ
+; (100kHz / 10000 = 10Hz → 100ms, LIMIT=9999でCOUNT 0~9999)
+        LI   r1, 0x0F        ; LIMIT下位 (仮)
+        ; (...上位ビットの設定はLI+SLL+ORで構築...)
+        OUT  r1, 3            ; LIMIT設定
+
+; CTRL = プリスケーラ199(=0xC7), EN=1 → 0xC701
+        ; (...16ビット定数の構築...)
+        OUT  r1, 2            ; タイマ動作開始
+
+; overflow待ちループ
+wait:   IN   r0, 3            ; overflow読出し
+        LI   r1, 1
+        AND  r0, r1           ; bit0を取得
+        BE   wait             ; overflow=0 なら待ち継続
+        ; overflow=1 で脱出 (読出し時に自動クリア済み)
+\end{lstlisting}
+
+
+% =====================================================================
+\section{アセンブラの使い方}
+
+\subsection{概要}
+
+\texttt{simple\_asm.py} は全命令に対応したPythonアセンブラである。
+ラベル、コメント、PC相対分岐のアドレス自動計算をサポートする。
+
+\subsection{実行方法}
+
+\begin{lstlisting}[language={},caption={アセンブラの実行}]
+# 基本的な使い方
+python3 simple_asm.py input.asm -o output.hex
+
+# リスティング付きで実行
+python3 simple_asm.py input.asm -o output.hex -l
+
+# 出力ファイル名を省略すると input.hex が生成される
+python3 simple_asm.py input.asm
+\end{lstlisting}
+
+\subsection{アセンブリ言語の文法}
+
+\begin{lstlisting}[language={},caption={アセンブリ言語の文法}]
+; 行コメント (セミコロン以降が無視される)
+label:  MNEMONIC  operand1, operand2   ; インラインコメント
+
+; ラベル定義: 行頭の識別子 + コロン
+; 数値リテラル: 10 (10進), 0x0A (16進), 0b1010 (2進)
+; 負の即値: -1, -128
+; レジスタ: r0 ~ r7 (大文字/小文字可)
+\end{lstlisting}
+
+\subsection{命令記法一覧}
+
+\begin{table}[h]
+\centering
+\caption{アセンブラ記法}
+\small
+\begin{tabular}{ll}
+\toprule
+記法 & 例 \\
+\midrule
+\texttt{ADD Rd, Rs}      & \texttt{ADD r0, r1} \\
+\texttt{LD Ra, d(Rb)}    & \texttt{LD r0, 5(r1)} / \texttt{LD r0, -3(r2)} \\
+\texttt{ST Ra, d(Rb)}    & \texttt{ST r0, 0(r1)} \\
+\texttt{LI Rb, imm}      & \texttt{LI r0, 0x80} / \texttt{LI r1, -1} \\
+\texttt{B label}          & \texttt{B loop} \\
+\texttt{Bcc label}        & \texttt{BLT inner} / \texttt{BNE done} \\
+\texttt{BAL Rb, label}    & \texttt{BAL r7, func} \\
+\texttt{BR Rb}            & \texttt{BR r7} \\
+\texttt{ADDI Rb, imm}     & \texttt{ADDI r0, 1} / \texttt{ADDI r3, -1} \\
+\texttt{IN Rd [, port]}   & \texttt{IN r0} / \texttt{IN r0, 2} \\
+\texttt{OUT Rs [, port]}  & \texttt{OUT r0} / \texttt{OUT r1, 4} \\
+\texttt{HLT}              & \texttt{HLT} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% =====================================================================
+\section{プログラムの開発手順}
+
+\subsection{シミュレーション}
+
+\begin{lstlisting}[language={},caption={iverilog によるシミュレーション}]
+cd simple/
+
+# アセンブル
+python3 simple_asm.py myprog.asm -o myprog.hex -l
+
+# コンパイル (INIT_FILE を指定)
+iverilog -DINIT_FILE=\"myprog.hex\" -o sim.out \
+    simple_tb.v simple_cpu.v alu.v shifter.v regfile.v ram_sim.v
+
+# 実行
+vvp sim.out
+\end{lstlisting}
+
+\subsection{FPGA実装}
+
+\begin{enumerate}
+\item アセンブラでhexファイルを生成
+\item hexファイルからMIFファイルを作成し、\texttt{run.mif}として保存
+\item Quartus Primeでプロジェクトを開き、全Verilogモジュールを追加:
+      \texttt{simple\_top.v}, \texttt{simple\_cpu.v}, \texttt{alu.v},
+      \texttt{shifter.v}, \texttt{regfile.v}, \texttt{ram.v},
+      \texttt{seg7dec.v}, \texttt{timer.v}
+\item ピンアサインを設定（\texttt{.qsf}ファイル）
+\item SDCファイルでクロック制約を設定
+\item コンパイル → Programmer でFPGAに書き込み
+\end{enumerate}
+
+
+% =====================================================================
+\section{サンプルプログラム}
+
+\subsection{Hello World（即値加算と表示）}
+
+\begin{lstlisting}[language={},caption={最初のプログラム}]
+; hello.asm - 3 + 5 = 8 を7セグに表示
+        LI   r0, 3          ; r0 = 3
+        LI   r1, 5          ; r1 = 5
+        ADD  r0, r1         ; r0 = r0 + r1 = 8
+        OUT  r0              ; 7セグに "0008" 表示
+        HLT                  ; 停止
+\end{lstlisting}
+
+\subsection{DIPスイッチ読取り}
+
+\begin{lstlisting}[language={},caption={DIPスイッチの値を表示}]
+; dipsw.asm - DIPスイッチの値を読み取って表示
+loop:   IN   r0, 0          ; DIPスイッチAを読取り
+        IN   r1, 1          ; DIPスイッチBを読取り
+        SLL  r1, 8          ; 上位8ビットにシフト
+        OR   r0, r1         ; r0 = B:A (16ビット)
+        OUT  r0              ; 7セグに表示
+        B    loop            ; 無限ループ
+\end{lstlisting}
+
+\subsection{LED制御}
+
+\begin{lstlisting}[language={},caption={LEDをカウントアップ}]
+; ledcount.asm - LEDを0~255でカウントアップ
+        LI   r0, 0          ; カウンタ
+loop:   OUT  r0, 4          ; LEDに出力 (ポート4)
+        OUT  r0              ; 7セグにも表示
+        ; 遅延 (ソフトウェアループ)
+        LI   r1, 0
+delay:  ADDI r1, 1
+        BNE  delay           ; r1 がオーバーフロー(0)するまで
+        ADDI r0, 1           ; カウンタ++
+        B    loop
+\end{lstlisting}
+
+\subsection{バブルソート}
+
+\texttt{sort.asm} を参照。16要素の配列をバブルソートし、結果を7セグに表示する
+デモプログラム。
+
+
+% =====================================================================
+\section{トラブルシューティング}
+
+\begin{table}[h]
+\centering
+\caption{よくある問題と対処法}
+\small
+\begin{tabular}{p{5cm}p{8cm}}
+\toprule
+症状 & 対処法 \\
+\midrule
+execを押しても動かない & リセットボタンを押してから再度execを押す \\
+7セグが何も表示しない & ロータリースイッチがモード0になっているか確認。OUT命令がプログラムに含まれているか確認 \\
+シミュレーションで期待と違う出力 & リスティング (\texttt{-l}) でアドレスを確認。分岐先ラベルの綴りを確認 \\
+アセンブルエラー「即値が範囲外」 & 8ビット即値は $-128$\textasciitilde$+127$（符号付き）または $0$\textasciitilde$255$（符号なし）。16ビット定数はLI+SLL+ORで構築する \\
+DIPスイッチの値が反転する & 負論理。ハードウェア側で反転済み（\texttt{$\sim$sw}）なので、ソフトウェアではそのまま使用可能 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\end{document}

@@ -1,0 +1,580 @@
+\documentclass[a4paper,11pt]{ltjsarticle}
+\usepackage{geometry}
+\geometry{top=25mm,bottom=25mm,left=25mm,right=25mm}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{multirow}
+
+\lstset{
+  language=Verilog,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red},
+  numbers=left, numberstyle=\tiny\color{gray}, numbersep=5pt,
+  frame=single, breaklines=true, tabsize=4, showstringspaces=false, captionpos=b
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{計算機科学実験及演習3 ハードウェア — アーキテクチャ拡張仕様書}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\LARGE 計算機科学実験及演習3 ハードウェア}\\[1cm]
+{\Huge\bfseries アーキテクチャ拡張仕様書}\\[0.5cm]
+{\LARGE SIMPLE/B プロセッサの拡張設計}\\[3cm]
+\begin{tabular}{rl}
+学籍番号 & （学籍番号を記入） \\[0.5em]
+氏名     & （氏名を記入） \\[0.5em]
+提出日   & 2026年6月5日 \\
+\end{tabular}
+\vfill
+京都大学 工学部情報学科 計算機科学コース
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+
+% =====================================================================
+\section{拡張の概要}
+
+本書では、SIMPLE/B基本設計に対して行ったアーキテクチャ拡張の仕様を定義する。
+拡張は以下の5領域にわたる。
+
+\begin{table}[h]
+\centering
+\caption{拡張項目一覧}
+\begin{tabular}{clcl}
+\toprule
+\# & 拡張項目 & 担当 & 主な効果 \\
+\midrule
+1 & 4サイクル実行方式 & A & 性能25\%向上 \\
+2 & ISA拡張 (BAL/BR/ADDI) & A & サブルーチン呼出、即値演算 \\
+3 & 同期RAM (Block RAM) 対応 & A & メモリ容量256語→4096語 \\
+4 & ハードウェアタイマ & B & 正確な時間計測 \\
+5 & I/Oアドレス空間拡張 & B & 複数デバイス接続 \\
+6 & 8桁7セグ表示+モード切替 & B & 32ビット表示、デバッグ支援 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% =====================================================================
+\section{マイクロアーキテクチャ拡張: 4サイクル化}
+
+\subsection{基本設計との比較}
+
+SIMPLE/Bの基本設計は5フェーズ順次実行であるが、
+命令フェッチ（p1）とレジスタ書き戻し（p5）のデータパスが独立していることに着目し、
+これらを1フェーズに統合して4フェーズとした。
+
+\begin{table}[h]
+\centering
+\caption{フェーズ構成の比較}
+\begin{tabular}{ll|ll}
+\toprule
+\multicolumn{2}{c|}{基本設計 (5フェーズ)} & \multicolumn{2}{c}{拡張設計 (4フェーズ)} \\
+\midrule
+p1 & 命令フェッチ (IF)       & \multirow{2}{*}{PH1} & \multirow{2}{*}{IF + WB} \\
+p5 & レジスタ書き戻し (WB)   & & \\
+p2 & レジスタ読み出し (RR)   & PH2 & RR \\
+p3 & 演算 (EX)               & PH3 & EX + ST書込み \\
+p4 & メモリアクセス/IO (MA)  & PH4 & MA / IO / 分岐 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{フェーズ動作の詳細}
+
+\begin{description}
+\item[PH1 (IF+WB)]
+前命令の書き戻し（パイプラインレジスタ経由）とフェッチを同時実行。
+PH4で提示されたアドレスの命令を取得し、\texttt{ir}に格納。\texttt{pc $\leftarrow$ pc + 1}。
+
+\item[PH2 (RR)]
+\texttt{ar $\leftarrow$ r[Rs/Ra]}、\texttt{br $\leftarrow$ r[Rd/Rb]}。
+PH1でのレジスタ書き込みはクロックエッジで完了しており、非同期リードで最新値が読まれる。
+
+\item[PH3 (EX+ST)]
+ALUまたはシフタで演算し、\texttt{dr}に格納。条件コード更新。
+ST命令では\texttt{mem\_we=1}としPH3$\to$PH4エッジで書込み。
+
+\item[PH4 (MA/IO/Branch)]
+LD: \texttt{mdr $\leftarrow$ mem[dr]}。
+IN/OUT: I/O操作。分岐: \texttt{pc $\leftarrow$ dr}。
+書き戻し情報をパイプラインレジスタに保存。
+次命令アドレスをRAMに提示。
+\end{description}
+
+\subsection{パイプラインレジスタ}
+
+PH1で前命令の書き戻しを行うため、以下のレジスタをPH4で設定する。
+
+\begin{table}[h]
+\centering
+\caption{書き戻しパイプラインレジスタ}
+\begin{tabular}{lll}
+\toprule
+信号名 & 幅 & 用途 \\
+\midrule
+\texttt{wb\_rf\_we}   & 1 bit  & 書き込みイネーブル \\
+\texttt{wb\_rf\_addr} & 3 bit  & 書き込み先レジスタ番号 \\
+\texttt{wb\_rf\_data} & 16 bit & 書き込みデータ \\
+\texttt{wb\_use\_mdr} & 1 bit  & LD/IN命令時、MDRを使用 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{データハザードの回避}
+
+レジスタファイルの非同期リードにより、PH1のクロックエッジでの書き込みと
+PH2での読み出しは自然に整合する。フォワーディングやストールは不要。
+
+\subsection{同期RAMとの協調}
+
+Block RAM（altsyncram, \texttt{OUTDATA\_REG\_A = "UNREGISTERED"}）は
+クロックエッジでアドレスをラッチし、組み合わせでデータを出力する。
+データが必要な1フェーズ前にアドレスを提示する。
+
+\begin{table}[h]
+\centering
+\caption{メモリアドレスのタイミング}
+\begin{tabular}{lll}
+\toprule
+タイミング & \texttt{mem\_addr} & 目的 \\
+\midrule
+PH3 & \texttt{alu\_result} & LD/ST用実効アドレス \\
+PH4 & \texttt{next\_pc\_val} & 次命令フェッチ \\
+他  & \texttt{pc} & デフォルト \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% =====================================================================
+\section{ISA拡張}
+
+基本命令セットに3命令を追加する。全てformat (c)を使用し、
+既存の未使用op2コードに割り当てる。
+
+\begin{table}[h]
+\centering
+\caption{op2コード割り当て}
+\begin{tabular}{lll}
+\toprule
+op2 & 命令 & 状態 \\
+\midrule
+000 & LI  & 基本 \\
+001 & BAL & \textbf{拡張} \\
+010 & BR  & \textbf{拡張} \\
+011 & ADDI & \textbf{拡張} \\
+100 & B   & 基本 \\
+101 & (空き) & 将来拡張用 \\
+110 & (空き) & 将来拡張用 \\
+111 & Bcc & 基本 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{BAL — Branch And Link}
+
+\begin{table}[h]
+\centering
+\caption{BAL命令仕様}
+\begin{tabular}{ll}
+\toprule
+項目 & 内容 \\
+\midrule
+形式        & (c): \texttt{10|001|Rb(3)|d(8)} \\
+ニーモニック & \texttt{BAL Rb, d} \\
+動作        & \texttt{r[Rb] = PC; PC = PC + 1 + sign\_ext(d)} \\
+フラグ      & 変化なし \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+PCはフェッチ時に+1済みのため、\texttt{r[Rb]}に保存されるのは次の命令のアドレスである。
+ALU入力Aに\texttt{pc}を選択し、\texttt{dr = pc + sign\_ext(d8)}で分岐先を計算する。
+書き戻しデータには\texttt{pc}（戻りアドレス）を使用する。
+
+\subsubsection{コスト・ベネフィット分析}
+
+\begin{itemize}
+\item \textbf{回路コスト}: ALU入力Aマルチプレクサに1分岐追加、
+  書き戻しデータの選択に1条件追加。追加ゲート数は約20 LE。
+\item \textbf{ベネフィット}: サブルーチン呼出が1命令で実現。
+  基本設計ではサブルーチン呼出は不可能であったため、質的な機能向上。
+  プログラムの構造化、コード再利用が可能になる。
+\end{itemize}
+
+\subsection{BR — Branch Register}
+
+\begin{table}[h]
+\centering
+\caption{BR命令仕様}
+\begin{tabular}{ll}
+\toprule
+項目 & 内容 \\
+\midrule
+形式        & (c): \texttt{10|010|Rb(3)|d(8)} \\
+ニーモニック & \texttt{BR Rb} \\
+動作        & \texttt{PC = r[Rb] + sign\_ext(d)} （d は通常0）\\
+フラグ      & 変化なし \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+ALU入力Aに\texttt{br}（= \texttt{r[Rb]}）を選択。
+レジスタ書き込み不要（\texttt{need\_rf\_write}に含めない）。
+
+\subsubsection{コスト・ベネフィット分析}
+
+\begin{itemize}
+\item \textbf{回路コスト}: 分岐判定条件に\texttt{is\_br}を追加するのみ。約5 LE。
+\item \textbf{ベネフィット}: BALと組み合わせてサブルーチンの復帰を実現。
+  また、間接ジャンプ（ジャンプテーブル）にも使用可能。
+\end{itemize}
+
+\subsection{ADDI — Add Immediate}
+
+\begin{table}[h]
+\centering
+\caption{ADDI命令仕様}
+\begin{tabular}{ll}
+\toprule
+項目 & 内容 \\
+\midrule
+形式        & (c): \texttt{10|011|Rb(3)|d(8)} \\
+ニーモニック & \texttt{ADDI Rb, d} \\
+動作        & \texttt{r[Rb] = r[Rb] + sign\_ext(d)} \\
+フラグ      & S, Z, C, V を更新 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+ALU入力Aに\texttt{br}（= \texttt{r[Rb]}）、入力Bに\texttt{sign\_ext(d8)}を選択。
+既存ALU（ADD演算）をそのまま使用。
+
+\subsubsection{コスト・ベネフィット分析}
+
+\begin{itemize}
+\item \textbf{回路コスト}: ALU入力Aマルチプレクサに1分岐追加、
+  フラグ更新条件に\texttt{is\_addi}追加。約15 LE。
+\item \textbf{ベネフィット}: ループカウンタのインクリメント/デクリメントが
+  1命令で完了（基本設計では LI + ADD の2命令が必要）。
+  典型的なループで33\%の命令数削減。
+  さらにADDIのフラグ更新により、直後のBccで分岐判定が可能。
+\end{itemize}
+
+\subsection{拡張命令の効果まとめ}
+
+\begin{table}[h]
+\centering
+\caption{ISA拡張による命令数削減}
+\begin{tabular}{lcc}
+\toprule
+処理 & 基本ISA & 拡張ISA \\
+\midrule
+\texttt{r0 = r0 + 1} & 2命令 & 1命令 (ADDI) \\
+関数呼び出し+復帰 & 不可能 & 2命令 (BAL+BR) \\
+ループカウンタ操作+比較 & 3命令 & 2命令 (ADDI+CMP) \\
+カウンタ操作+条件分岐 & 3命令 & 2命令 (ADDI+BNE) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% =====================================================================
+\section{メモリアーキテクチャ拡張: 同期RAM}
+
+\subsection{基本設計との比較}
+
+\begin{table}[h]
+\centering
+\caption{メモリの比較}
+\begin{tabular}{lcc}
+\toprule
+項目 & 基本設計 & 拡張設計 \\
+\midrule
+メモリ種別 & Distributed RAM (非同期) & Block RAM (同期) \\
+容量       & 256語 (8ビットアドレス) & 4096語 (12ビットアドレス) \\
+読出し     & 組み合わせ & クロックエッジでラッチ \\
+FPGA資源   & Logic Elements消費 & 専用RAMブロック使用 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{メモリインタフェース}
+
+\begin{lstlisting}[caption={RAM インタフェース}]
+module ram(
+    input  [11:0] address,  // 12ビットアドレス (4096語)
+    input         clock,
+    input  [15:0] data,     // 書込みデータ
+    input         wren,     // 書込みイネーブル
+    output [15:0] q         // 読出しデータ
+);
+\end{lstlisting}
+
+Quartus Prime の altsyncram megafunction を使用し、
+\texttt{run.mif} によりプログラムを初期化する。
+
+
+% =====================================================================
+\section{周辺回路拡張: ハードウェアタイマ}
+
+\subsection{ブロック図}
+
+\begin{figure}[h]
+\centering
+\begin{verbatim}
+    +-------+     +-------------+     +-----------+
+    | CTRL  |---->| プリスケーラ |---->| メイン     |---> COUNT (16bit)
+    | [15:8]|     | カウンタ(8b) |     | カウンタ   |
+    +-------+     +-------------+     +-----------+
+    | EN(0) |--------+                    |   ^
+    +-------+        |                    v   |
+    | RST(1)|--------|-------> LIMIT比較 ---+
+    +-------+        |           |
+                     |           v
+                     |       overflow (1bit) ---> Read-to-Clear
+                     v
+                 タイマ動作/停止
+\end{verbatim}
+\caption{タイマモジュールのブロック図}
+\end{figure}
+
+\subsection{レジスタ仕様}
+
+\begin{table}[h]
+\centering
+\caption{タイマレジスタの詳細}
+\begin{tabular}{lp{3cm}p{7cm}}
+\toprule
+レジスタ & ビット構成 & 動作 \\
+\midrule
+COUNT & [15:0] & プリスケーラで分周されたクロックでインクリメント。LIMIT到達で0リセット \\
+CTRL  & [0] EN & 1で動作、0で停止 \\
+      & [1] RESET & 1書込みでCOUNTを即座に0クリア（ワンショット、自動クリア） \\
+      & [7:2] & 予約 \\
+      & [15:8] PRESCALER & 分周値。カウント周波数 $= 20\,\mathrm{MHz} / (\mathrm{PRESCALER} + 1)$ \\
+LIMIT & [15:0] & カウント上限。COUNT $\geq$ LIMITでoverflow発生、COUNT$\leftarrow$0 \\
+overflow & [0] & 上限到達フラグ。IN命令で読み出すと自動クリア \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{インタフェース}
+
+\begin{lstlisting}[caption={タイマモジュールのインタフェース}]
+module timer(
+    input         clk,
+    input         rst_n,
+    input  [15:0] wdata,       // 書き込みデータ
+    input         we_ctrl,     // CTRL レジスタ書込み
+    input         we_limit,    // LIMIT レジスタ書込み
+    input         rd_overflow, // overflow 読出し (クリア用)
+    output [15:0] count,       // 現在のカウント値
+    output reg    overflow     // カウント到達フラグ
+);
+\end{lstlisting}
+
+
+% =====================================================================
+\section{周辺回路拡張: I/Oアドレス空間}
+
+\subsection{設計方針}
+
+IN/OUT命令のdフィールド下位4ビット（\texttt{I[3:0]}）を
+I/Oポート番号として利用する。これにより最大16デバイスのアドレッシングが可能となる。
+
+\subsection{CPUへの変更}
+
+以下の3つの出力ポートを\texttt{simple\_cpu.v}に追加した。
+
+\begin{lstlisting}[caption={CPUに追加したI/O制御信号}]
+output [3:0]  io_port,    // I/Oポート番号 (= d4 = I[3:0])
+output        io_read,    // IN命令実行中 (PH4)
+output        io_write    // OUT命令実行中 (PH4)
+
+assign io_port  = d4;
+assign io_read  = (phase == PH4) && running && is_in;
+assign io_write = (phase == PH4) && running && is_out;
+\end{lstlisting}
+
+\subsection{I/Oポートマップ}
+
+\begin{table}[h]
+\centering
+\caption{I/Oポートマップ（拡張仕様）}
+\begin{tabular}{cll}
+\toprule
+ポート & IN (読み出し) & OUT (書き込み) \\
+\midrule
+0  & DIPスイッチ A (8bit)   & 7セグ出力 下位16bit \\
+1  & DIPスイッチ B (8bit)   & 7セグ出力 上位16bit \\
+2  & タイマ COUNT (16bit)   & タイマ CTRL \\
+3  & タイマ overflow (1bit) & タイマ LIMIT \\
+4  & プッシュスイッチ (4bit)& LED出力 (8bit) \\
+5  & ロータリースイッチ (4bit) & (予約) \\
+6--15 & (予約: 0を返す)    & (予約: 無視) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{後方互換性}
+
+ポート番号0をDIPスイッチ/7セグに割り当てているため、
+ポート番号を省略した既存プログラム（\texttt{d[3:0]=0}）は変更なしで動作する。
+
+
+% =====================================================================
+\section{周辺回路拡張: 8桁7セグメント表示}
+
+\subsection{ダイナミック点灯の拡張}
+
+桁選択信号を2ビット（4桁）から3ビット（8桁）に拡張した。
+分周比4kHz を維持し、8桁巡回のリフレッシュレートは500Hzとなる。
+
+\subsection{表示データの選択}
+
+OUTポート0（下位16ビット）とポート1（上位16ビット）を結合した32ビットデータ、
+またはデバッグ情報をロータリースイッチで切り替えて表示する。
+
+\begin{table}[h]
+\centering
+\caption{表示モード}
+\begin{tabular}{clp{7cm}}
+\toprule
+モード & データソース & 表示形式 \\
+\midrule
+0 & \texttt{\{seg\_reg\_hi, seg\_reg\_lo\}} & OUT命令の出力値を8桁HEX表示 \\
+1 & \texttt{\{0000, debug\_pc\}} & PC値を下位4桁に表示 \\
+2 & \texttt{\{r3[7:0], r2[7:0], r1[7:0], r0[7:0]\}} & r0\textasciitilde r3の下位8ビットを各2桁で表示 \\
+3 & \texttt{\{0000, timer\_count\}} & タイマCOUNT値を下位4桁に表示 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{デバッグポート}
+
+CPU内部信号を外部から観測するため、以下の出力を追加した。
+
+\begin{lstlisting}[caption={デバッグポートの実装}]
+output [15:0] debug_pc,
+output [15:0] debug_r0, debug_r1, debug_r2, debug_r3,
+
+assign debug_pc = pc;
+assign debug_r0 = rf.regs[0];  // 階層参照でレジスタファイル内部を参照
+assign debug_r1 = rf.regs[1];
+assign debug_r2 = rf.regs[2];
+assign debug_r3 = rf.regs[3];
+\end{lstlisting}
+
+
+% =====================================================================
+\section{モジュール構成}
+
+\begin{table}[h]
+\centering
+\caption{最終的なモジュール構成}
+\begin{tabular}{llp{7cm}}
+\toprule
+ファイル & モジュール & 概要 \\
+\midrule
+\texttt{simple\_top.v} & \texttt{simple\_top} & トップモジュール。全モジュール統合、I/Oデコード、8桁7セグ \\
+\texttt{simple\_cpu.v} & \texttt{simple\_cpu} & CPUコア。4サイクルFSM、拡張ISA、I/Oポート出力 \\
+\texttt{alu.v}         & \texttt{alu}         & 16ビットALU (7演算+フラグ) \\
+\texttt{shifter.v}     & \texttt{shifter}     & バレルシフタ (4種) \\
+\texttt{regfile.v}     & \texttt{regfile}     & 8$\times$16ビットレジスタファイル \\
+\texttt{ram.v}         & \texttt{ram}         & Block RAM (altsyncram, 4096語) \\
+\texttt{seg7dec.v}     & \texttt{seg7dec}     & 7セグデコーダ \\
+\texttt{timer.v}       & \texttt{timer}       & ハードウェアタイマ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\begin{verbatim}
+                        simple_top
+    +------------------------------------------------------+
+    |                                                      |
+    |  +-----------+    +--------+    +--------+          |
+    |  | simple_cpu|<-->|  ram   |    | timer  |          |
+    |  |           |    |(4096w) |    |        |          |
+    |  | +-----+   |    +--------+    +--------+          |
+    |  | | alu  |  |                                      |
+    |  | +-----+   |    +--------+                        |
+    |  | |shift |  |    |seg7dec |---> seg[7:0]           |
+    |  | +-----+   |    +--------+                        |
+    |  | |regf  |  |                  sel[7:0] <---+      |
+    |  | +-----+   |                               |      |
+    |  +-----------+                  I/O Decoder --+      |
+    |       ^   |                      ^    |              |
+    |       |   v                      |    v              |
+    |    in_mux  cpu_out     sw,pushsw,rotsw  led         |
+    +------------------------------------------------------+
+\end{verbatim}
+\caption{システム全体のブロック図}
+\end{figure}
+
+
+% =====================================================================
+\section{命令エンコーディング全体図}
+
+\begin{table}[h]
+\centering
+\caption{命令エンコーディングマップ}
+\small
+\begin{tabular}{cc|l}
+\toprule
+op1 & op2/op3 & 命令 \\
+\midrule
+00 & --- & LD Ra, d(Rb) \\
+01 & --- & ST Ra, d(Rb) \\
+\midrule
+10 & 000 & LI Rb, d \\
+10 & 001 & BAL Rb, d \textbf{(拡張)} \\
+10 & 010 & BR Rb \textbf{(拡張)} \\
+10 & 011 & ADDI Rb, d \textbf{(拡張)} \\
+10 & 100 & B d \\
+10 & 101 & (空き) \\
+10 & 110 & (空き) \\
+10 & 111 & Bcc d (BE/BLT/BLE/BNE) \\
+\midrule
+11 & 0000 & ADD Rd, Rs \\
+11 & 0001 & SUB Rd, Rs \\
+11 & 0010 & AND Rd, Rs \\
+11 & 0011 & OR Rd, Rs \\
+11 & 0100 & XOR Rd, Rs \\
+11 & 0101 & CMP Rd, Rs \\
+11 & 0110 & MOV Rd, Rs \\
+11 & 0111 & (空き) \\
+11 & 1000 & SLL Rd, d \\
+11 & 1001 & SLR Rd, d \\
+11 & 1010 & SRL Rd, d \\
+11 & 1011 & SRA Rd, d \\
+11 & 1100 & IN Rd \\
+11 & 1101 & OUT Rs \\
+11 & 1110 & (空き) \\
+11 & 1111 & HLT \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\end{document}

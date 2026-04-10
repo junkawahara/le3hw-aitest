@@ -1,0 +1,327 @@
+\documentclass[a4paper,11pt]{ltjsarticle}
+\usepackage{geometry}
+\geometry{top=25mm,bottom=25mm,left=25mm,right=25mm}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{longtable}
+\usepackage{array}
+
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red},
+  numbers=left, numberstyle=\tiny\color{gray}, numbersep=5pt,
+  frame=single, breaklines=true, tabsize=4, showstringspaces=false, captionpos=b
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{計算機科学実験及演習3 ハードウェア — 実施報告書}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\LARGE 計算機科学実験及演習3 ハードウェア}\\[1cm]
+{\Huge\bfseries 実施報告書}\\[0.5cm]
+{\LARGE SIMPLE/B 拡張プロセッサの設計・実装}\\[3cm]
+\begin{tabular}{rl}
+学籍番号 & （学籍番号を記入） \\[0.5em]
+氏名     & （氏名を記入） \\[0.5em]
+提出日   & 2026年6月5日 \\
+\end{tabular}
+\vfill
+京都大学 工学部情報学科 計算機科学コース
+\end{titlepage}
+
+\tableofcontents
+\clearpage
+
+
+% =====================================================================
+\section{プロジェクト概要}
+
+本プロジェクトでは、SIMPLE アーキテクチャ（ver 4.0）に基づく16ビットプロセッサを
+Verilog HDL で設計・実装し、PowerMedusa MU500-RX/RK (Cyclone IV FPGA) 上で動作させた。
+基本のSIMPLE/Bプロセッサに対し、マイクロアーキテクチャ改良、ISA拡張、
+周辺回路追加、応用プログラム開発を行った。
+
+
+% =====================================================================
+\section{役割分担}
+
+2名のグループで以下の通り作業を分担した。
+
+\begin{table}[h]
+\centering
+\caption{役割分担}
+\begin{tabular}{clp{8cm}}
+\toprule
+担当 & 主要範囲 & 具体的な作業 \\
+\midrule
+A & CPUコア設計 &
+  4サイクル実行方式の設計・実装、
+  ISA拡張（BAL/BR/ADDI）、
+  同期RAM（Block RAM）対応、
+  テストプログラム（test\_all.hex）の作成 \\
+\midrule
+B & 周辺回路・ソフトウェア &
+  ハードウェアタイマ（timer.v）、
+  I/Oアドレス空間拡張、
+  8桁7セグ表示+モード切替、
+  バブルソートプログラム（sort.asm）、
+  Pythonアセンブラ（simple\_asm.py）、
+  テストベンチ拡張 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{共通作業}
+
+\begin{itemize}
+\item 基本設計仕様の策定（plan.md）
+\item FPGA実装とデモ準備
+\item 最終レポート群の作成
+\end{itemize}
+
+
+% =====================================================================
+\section{実施スケジュール}
+
+\begin{table}[h]
+\centering
+\caption{実施スケジュール}
+\begin{tabular}{lp{5.5cm}p{5.5cm}}
+\toprule
+期間 & 担当A & 担当B \\
+\midrule
+4月第3週 &
+  SIMPLE/B基本設計の理解、5フェーズCPU実装 &
+  導入課題（7セグ、カウンタ）完了 \\
+\midrule
+4月第4週 &
+  4サイクル化の設計、パイプラインレジスタ導入 &
+  SIMPLE/B基本設計の理解、plan.md策定 \\
+\midrule
+5月第1週 &
+  ISA拡張（BAL/BR/ADDI）実装、テストプログラム作成 &
+  タイマモジュール設計・実装 \\
+\midrule
+5月第2週 &
+  同期RAM対応、機能設計仕様書（担当A）作成 &
+  I/Oアドレス拡張、7セグ8桁化 \\
+\midrule
+5月第3--4週 &
+  統合テスト支援、中間レポート &
+  バブルソートプログラム、アセンブラ、中間レポート \\
+\midrule
+5月第5週--6月 &
+  性能評価、FPGA最終調整 &
+  テストベンチ拡張、最終レポート \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% =====================================================================
+\section{実装結果}
+
+\subsection{実装状況一覧}
+
+\begin{table}[h]
+\centering
+\caption{実装項目の状況}
+\begin{tabular}{clcc}
+\toprule
+\# & 項目 & 計画 & 達成 \\
+\midrule
+1 & 4サイクル実行方式         & $\checkmark$ & $\checkmark$ \\
+2 & ISA拡張 (BAL)             & $\checkmark$ & $\checkmark$ \\
+3 & ISA拡張 (BR)              & $\checkmark$ & $\checkmark$ \\
+4 & ISA拡張 (ADDI)            & $\checkmark$ & $\checkmark$ \\
+5 & 同期RAM (Block RAM) 対応  & $\checkmark$ & $\checkmark$ \\
+6 & ハードウェアタイマ         & $\checkmark$ & $\checkmark$ \\
+7 & I/Oアドレス空間 (6ポート) & $\checkmark$ & $\checkmark$ \\
+8 & 8桁7セグ表示              & $\checkmark$ & $\checkmark$ \\
+9 & 表示モード切替 (4モード)  & $\checkmark$ & $\checkmark$ \\
+10& LED出力                    & $\checkmark$ & $\checkmark$ \\
+11& バブルソートプログラム     & $\checkmark$ & $\checkmark$ \\
+12& Pythonアセンブラ           & $\checkmark$ & $\checkmark$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+計画した全12項目を完了した。
+
+\subsection{ファイル構成}
+
+最終的なファイル構成を表\ref{tab:files}に示す。
+
+\begin{table}[h]
+\centering
+\caption{最終ファイル構成}
+\label{tab:files}
+\small
+\begin{tabular}{lll}
+\toprule
+ファイル & 種別 & 概要 \\
+\midrule
+\texttt{simple\_top.v}   & Verilog & トップモジュール（拡張版） \\
+\texttt{simple\_cpu.v}   & Verilog & CPUコア（4サイクル+ISA拡張） \\
+\texttt{alu.v}           & Verilog & ALU \\
+\texttt{shifter.v}       & Verilog & バレルシフタ \\
+\texttt{regfile.v}       & Verilog & レジスタファイル \\
+\texttt{ram.v}           & Verilog & Block RAM (Quartus IP) \\
+\texttt{ram\_sim.v}       & Verilog & シミュレーション用RAM \\
+\texttt{seg7dec.v}       & Verilog & 7セグデコーダ \\
+\texttt{timer.v}         & Verilog & ハードウェアタイマ \\
+\texttt{simple\_tb.v}     & Verilog & テストベンチ \\
+\midrule
+\texttt{simple\_asm.py}   & Python  & アセンブラ \\
+\texttt{sort.asm}        & Assembly & バブルソートプログラム \\
+\texttt{sort.hex}        & データ  & バブルソート機械語 \\
+\texttt{test\_all.hex}    & データ  & ISA全命令テスト \\
+\texttt{test\_basic.hex}  & データ  & 基本テスト \\
+\texttt{test\_branch.hex} & データ  & 分岐テスト \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% =====================================================================
+\section{検証結果}
+
+\subsection{シミュレーション検証}
+
+Icarus Verilog 11.0 による自動検証を行い、全テストがパスした。
+
+\subsubsection{ISA全命令テスト}
+
+テストプログラム \texttt{test\_all.hex} により、基本命令および拡張命令の
+正常動作を5項目で検証した。
+
+\begin{table}[h]
+\centering
+\caption{ISAテスト結果}
+\begin{tabular}{clcc}
+\toprule
+\# & テスト内容 & 期待出力 & 結果 \\
+\midrule
+0 & 即値ロード + 加算 (LI, ADD)          & 0x0008 & OK \\
+1 & ループ (ADD, CMP, BLT)               & 0x0003 & OK \\
+2 & 即値加算 (LI, ADDI)                  & 0x000A & OK \\
+3 & サブルーチン呼出 (BAL, BR)            & 0x0014 & OK \\
+4 & サブルーチン内レジスタ変更 (LI)       & 0xFFFF & OK \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{バブルソートテスト}
+
+テストプログラム \texttt{sort.hex}（58語）により、
+16要素の配列ソートと結果出力を検証した。
+
+\begin{lstlisting}[language={},frame=single,caption={バブルソートテスト結果}]
+=== Bubble Sort Test ===
+OUT[0]  = 0000  OK    OUT[8]  = 0008  OK
+OUT[1]  = 0001  OK    OUT[9]  = 0009  OK
+OUT[2]  = 0002  OK    OUT[10] = 000a  OK
+OUT[3]  = 0003  OK    OUT[11] = 000b  OK
+OUT[4]  = 0004  OK    OUT[12] = 000c  OK
+OUT[5]  = 0005  OK    OUT[13] = 000d  OK
+OUT[6]  = 0006  OK    OUT[14] = 000e  OK
+OUT[7]  = 0007  OK    OUT[15] = 000f  OK
+=== CPU Halted (PC=003a, 16 outputs) ===
+=== SORT TEST PASSED ===
+\end{lstlisting}
+
+初期データ \{15, 3, 8, 1, 12, 5, 10, 2, 14, 7, 11, 4, 13, 6, 9, 0\} が
+昇順 \{0, 1, 2, ..., 15\} に正しくソートされた。
+
+\subsection{FPGA実機検証}
+
+（実機デモの結果を記載すること）
+
+
+% =====================================================================
+\section{開発中に遭遇した課題と解決}
+
+\subsection{同期RAMのタイミング問題}
+
+\textbf{課題}: Block RAM は非同期リードではなく、クロックエッジでアドレスをラッチする。
+基本設計のメモリアクセスタイミングでは、フェッチしたアドレスの命令が同じサイクルで得られず、
+正しく動作しなかった。
+
+\textbf{解決}: データが必要な1フェーズ前にアドレスを提示する方式を採用。
+PH3でLD/ST用アドレス、PH4で次命令アドレスを提示することで、
+4サイクル実行を維持したまま同期RAMと協調動作させた。
+
+\subsection{4サイクル化でのレジスタ書き戻し}
+
+\textbf{課題}: PH1でフェッチと書き戻しを同時に行うため、
+前命令の演算結果（DR/MDR）の選択情報をPH4$\to$PH1間で保持する必要があった。
+
+\textbf{解決}: パイプラインレジスタ（\texttt{wb\_rf\_we}, \texttt{wb\_rf\_addr},
+\texttt{wb\_rf\_data}, \texttt{wb\_use\_mdr}）を導入。
+PH4で書き戻し情報を保存し、PH1で使用する。
+レジスタファイルの非同期リードにより、PH2で最新値が読み出されるため
+データハザードは発生しない。
+
+\subsection{バブルソートの外側ループ終了条件}
+
+\textbf{課題}: 初期実装では外側ループの終了判定に CMP + BNE を使用していたが、
+i=0を超えてマイナスになっても BNE が成立し続け、無限ループとなった。
+
+\textbf{解決}: ADDI命令がフラグを更新する性質を利用し、
+\texttt{ADDI r3, -1} のZフラグを直接 \texttt{BNE} で参照する方式に変更。
+i=1$\to$0 のとき Z=1 となり BNE 不成立でループ脱出。
+CMP命令が不要になり、1命令削減にもなった。
+
+\subsection{I/Oポートの後方互換性}
+
+\textbf{課題}: I/Oポート番号を導入すると、ポート番号を指定しない
+既存プログラムが動作しなくなる可能性があった。
+
+\textbf{解決}: IN/OUT命令の\texttt{d[3:0]}フィールドが0の場合にポート0を選択する設計とした。
+既存プログラムではこのフィールドは0であるため、そのまま動作する。
+
+
+% =====================================================================
+\section{まとめと今後の課題}
+
+\subsection{達成事項}
+
+\begin{itemize}
+\item 計画した全12項目を完了し、機能検証をパスした
+\item 4サイクル化により25\%の性能向上を達成
+\item ISA拡張によりサブルーチン呼出と即値演算を実現
+\item タイマとI/Oポートにより周辺デバイス制御が可能になった
+\item 58語のバブルソートプログラムが正常に動作
+\item アセンブラによりプログラム開発の効率が大幅に向上
+\end{itemize}
+
+\subsection{今後の課題}
+
+\begin{itemize}
+\item \textbf{パイプライン化}: 4サイクルから更に進んで命令パイプラインを導入すれば、
+  理想的にはCPI=1（4倍の性能向上）が期待できるが、
+  データハザード・コントロールハザードの対策が必要
+\item \textbf{割込み}: タイマのoverflowを割込みとして処理できれば、
+  ポーリング不要で効率的なタイマ利用が可能になる
+\item \textbf{乗算器}: 16ビット乗算命令の追加により、
+  より複雑な数値計算プログラムの実現が容易になる
+\item \textbf{キャッシュ}: メモリ階層を導入し、
+  Block RAMをキャッシュとして外部メモリを接続する構成
+\end{itemize}
+
+
+\end{document}
