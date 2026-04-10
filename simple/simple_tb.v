@@ -66,18 +66,20 @@ initial begin
     #50;
     exec = 1'b0;
 
-    // HLT まで待機 (最大100サイクル)
-    repeat (200) begin
-        @(posedge clk);
-        if (halted) begin
-            $display("--- CPU Halted (PC=%h) ---", cpu.pc);
-            #100;
-            $stop;
+    // HLT まで待機 (最大200サイクル)
+    begin : wait_halt
+        integer i;
+        for (i = 0; i < 200; i = i + 1) begin
+            @(posedge clk);
+            if (halted) begin
+                $display("--- CPU Halted (PC=%h) ---", cpu.pc);
+                $finish;
+            end
         end
     end
 
     $display("--- Timeout ---");
-    $stop;
+    $finish;
 end
 
 endmodule

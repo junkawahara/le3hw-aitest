@@ -25,7 +25,7 @@ initial begin
     end
 
     #100;
-    $stop;
+    $finish;
 end
 
 endmodule

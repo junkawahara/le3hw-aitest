@@ -1,0 +1,638 @@
+\documentclass[a4paper,11pt]{ltjsarticle}
+
+\usepackage{geometry}
+\geometry{top=25mm,bottom=25mm,left=25mm,right=25mm}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{longtable}
+\usepackage{array}
+
+\lstset{
+  language=Verilog,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{green!50!black},
+  stringstyle=\color{red},
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  numbersep=5pt,
+  frame=single,
+  breaklines=true,
+  tabsize=4,
+  showstringspaces=false,
+  captionpos=b
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{計算機科学実験及演習3 ハードウェア SIMPLE/Bプロセッサ}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\begin{document}
+
+% ===================== 表紙 =====================
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\LARGE 計算機科学実験及演習3 ハードウェア}\\[1cm]
+{\Huge\bfseries SIMPLE/Bプロセッサ設計レポート}\\[0.5cm]
+{\LARGE 基本アーキテクチャの実装と検証}\\[3cm]
+
+\begin{tabular}{rl}
+題目   & SIMPLE/Bプロセッサの設計と実装 \\[0.5em]
+学籍番号 & （学籍番号を記入） \\[0.5em]
+氏名   & （氏名を記入） \\[0.5em]
+提出日  & 2026年5月8日 \\
+\end{tabular}
+
+\vfill
+京都大学 工学部情報学科 計算機科学コース
+\end{titlepage}
+
+% ===================== 目次 =====================
+\tableofcontents
+\clearpage
+
+% ===================== 1. はじめに =====================
+\section{はじめに}
+
+本レポートでは、SIMPLE (SIxteen-bit MicroProcessor for Laboratory Experiment) アーキテクチャに準拠した
+プロセッサ SIMPLE/B の設計と実装について報告する。
+SIMPLE/B は設計資料（ver 4.0）に記載された基本設計に基づく5フェーズ順次実行方式のプロセッサであり、
+Verilog HDL で記述し、Icarus Verilog によるシミュレーションで動作を検証した。
+
+\section{実験環境}
+
+\begin{table}[h]
+\centering
+\caption{実験環境}
+\label{tab:env}
+\begin{tabular}{ll}
+\toprule
+項目 & 内容 \\
+\midrule
+FPGAボード    & PowerMedusa MU500-RX/RK \\
+FPGA          & Altera Cyclone IV EP4CE30F23I7N \\
+CADツール     & Intel Quartus Prime 20.1 Standard Edition \\
+シミュレータ  & Icarus Verilog 11.0 / ModelSim-Intel FPGA Starter Edition \\
+OS            & Ubuntu 22.04 LTS (WSL2) \\
+クロック      & 20MHz 発振器 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ===================== 2. SIMPLEアーキテクチャ概要 =====================
+\section{SIMPLEアーキテクチャ概要}
+
+\subsection{レジスタとメモリ}
+
+SIMPLEは1語16ビットのコンピュータであり、以下の資源を持つ。
+
+\begin{itemize}
+\item \textbf{主記憶}: 16ビットアドレス、64KW（語単位）のアドレス空間。
+  Cyclone IV EP4CE30 では RAM 容量の制限により最大33KW。
+  本実装では256語（8ビットアドレス）の分散RAMを使用。
+\item \textbf{汎用レジスタ}: 8本（\texttt{r[0]}〜\texttt{r[7]}）、各16ビット。
+\item \textbf{プログラムカウンタ (PC)}: 実行中の命令のアドレスを保持。
+\item \textbf{条件コード}: S（符号）、Z（ゼロ）、C（桁上げ）、V（オーバーフロー）の4ビット。
+\end{itemize}
+
+\subsection{命令セットアーキテクチャ}
+
+SIMPLEの命令は全て1語（16ビット）の固定長であり、4種類の命令形式を持つ。
+
+\begin{table}[h]
+\centering
+\caption{命令形式}
+\label{tab:inst_format}
+\begin{tabular}{lll}
+\toprule
+形式 & ビット配置 & 用途 \\
+\midrule
+(a) 演算/IO & \texttt{11|Rs(3)|Rd(3)|op3(4)|d(4)} & ALU, シフト, IN/OUT, HLT \\
+(b) LD/ST   & \texttt{op1(2)|Ra(3)|Rb(3)|d(8)}     & メモリアクセス \\
+(c) LI/B    & \texttt{10|op2(3)|Rb(3)|d(8)}         & 即値ロード, 無条件分岐 \\
+(d) Bcc     & \texttt{10|111|cond(3)|d(8)}           & 条件分岐 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{演算/入出力命令}
+
+\begin{table}[h]
+\centering
+\caption{演算/入出力命令一覧}
+\label{tab:alu_ops}
+\begin{tabular}{llll}
+\toprule
+ニーモニック & op3 & 機能 & フラグ設定 \\
+\midrule
+ADD Rd,Rs & 0000 & \texttt{r[Rd] = r[Rd] + r[Rs]}         & S,Z,C,V \\
+SUB Rd,Rs & 0001 & \texttt{r[Rd] = r[Rd] - r[Rs]}         & S,Z,C,V \\
+AND Rd,Rs & 0010 & \texttt{r[Rd] = r[Rd] \& r[Rs]}        & S,Z; C=0 \\
+OR  Rd,Rs & 0011 & \texttt{r[Rd] = r[Rd] | r[Rs]}         & S,Z; C=0 \\
+XOR Rd,Rs & 0100 & \texttt{r[Rd] = r[Rd] \^{} r[Rs]}      & S,Z; C=0 \\
+CMP Rd,Rs & 0101 & \texttt{r[Rd] - r[Rs]}（フラグのみ）   & S,Z,C,V \\
+MOV Rd,Rs & 0110 & \texttt{r[Rd] = r[Rs]}                  & S,Z; C=0 \\
+SLL Rd,d  & 1000 & 左論理シフト                             & S,Z,C; V=0 \\
+SLR Rd,d  & 1001 & 左循環シフト                             & S,Z; C=0, V=0 \\
+SRL Rd,d  & 1010 & 右論理シフト                             & S,Z,C; V=0 \\
+SRA Rd,d  & 1011 & 右算術シフト                             & S,Z,C; V=0 \\
+IN  Rd    & 1100 & \texttt{r[Rd] = input}                   & なし \\
+OUT Rs    & 1101 & \texttt{output = r[Rs]}                  & なし \\
+HLT       & 1111 & 停止                                     & なし \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{ロード/ストア命令}
+
+\begin{itemize}
+\item \textbf{LD Ra, d(Rb)}: \texttt{r[Ra] = *(r[Rb] + sign\_ext(d))} — レジスタ間接 + 変位
+\item \textbf{ST Ra, d(Rb)}: \texttt{*(r[Rb] + sign\_ext(d)) = r[Ra]}
+\end{itemize}
+
+\subsubsection{即値ロード/分岐命令}
+
+\begin{itemize}
+\item \textbf{LI Rb, d}: \texttt{r[Rb] = sign\_ext(d)} — 8ビット即値の符号拡張
+\item \textbf{B d}: \texttt{PC = PC + 1 + sign\_ext(d)} — PC相対無条件分岐
+\end{itemize}
+
+\subsubsection{条件分岐命令}
+
+\begin{table}[h]
+\centering
+\caption{条件分岐命令}
+\label{tab:bcc}
+\begin{tabular}{lll}
+\toprule
+ニーモニック & cond & 分岐条件 \\
+\midrule
+BE  d & 000 & Z = 1 （等しい） \\
+BLT d & 001 & S $\oplus$ V = 1 （符号付き小なり） \\
+BLE d & 010 & Z $\vee$ (S $\oplus$ V) = 1 （符号付き以下） \\
+BNE d & 011 & Z = 0 （等しくない） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ===================== 3. SIMPLE/B の設計 =====================
+\section{SIMPLE/Bマイクロアーキテクチャ}
+
+\subsection{全体構成}
+
+SIMPLE/B は1命令を5つのフェーズに分割し、順次活性化しながら実行する。
+図\ref{fig:block}にブロック図、図\ref{fig:phase}にフェーズのタイミングを示す。
+
+\begin{figure}[h]
+\centering
+\begin{verbatim}
+                  +----------+
+          +------>|    PC     |------+----> アドレスバス
+          |       +----------+      |
+          |           |  +1         v
+          |           v          +------+
+          |  p1  +---------+     | 主記憶 |
+          +------|   IR     |<---|      |<--- データバス
+          |      +---------+     +------+
+          |         デコード         ^
+          |           |  |          |
+          |      p2   v  v          |
+          |      +----+----+        |
+          |      | AR | BR |        |
+          |      +----+----+        |
+          |        |    |           |
+          |   p3   v    v           |
+          |      +--------+  +-------+
+          |      |  ALU   |  |シフタ  |
+          |      +--------+  +-------+
+          |         |  |          |
+          |    p4   v  v          |
+          |      +------+ +-----+
+          |      | SZCV | | DR  |----+----> アドレスバス
+          |      +------+ +-----+    |
+          |                  |       |
+          |   p5          +------+   |
+          +---------------|  MDR |<--+<--- 外部入力
+                          +------+
+                             |-----> 外部出力
+\end{verbatim}
+\caption{SIMPLE/Bブロック図（簡略版）}
+\label{fig:block}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\begin{verbatim}
+ clock  __/~~\__/~~\__/~~\__/~~\__/~~\__/~~\__
+ phase   | p1 | p2 | p3 | p4 | p5 | p1 | ...
+         | IF | RR | EX | MA | WB | IF | ...
+\end{verbatim}
+\caption{SIMPLE/Bの5フェーズ実行}
+\label{fig:phase}
+\end{figure}
+
+\subsection{フェーズの動作}
+
+\begin{enumerate}
+\item \textbf{p1 — 命令フェッチ (IF)}:
+  PCが保持するアドレスの命令を主記憶からフェッチし、
+  IR (Instruction Register) に格納する。同時にPCを1加算する。
+
+\item \textbf{p2 — レジスタ読み出し (RR)}:
+  IRの\texttt{Rs/Ra}フィールド（\texttt{I[13:11]}）で指定されるレジスタの値をARに、
+  \texttt{Rd/Rb}フィールド（\texttt{I[10:8]}）で指定されるレジスタの値をBRに格納する。
+
+\item \textbf{p3 — 演算 (EX)}:
+  命令に応じてALUまたはシフタで演算を行い、結果をDR (Data Register) に格納する。
+  演算命令では条件コード S, Z, C, V を更新する。
+  LD/ST命令ではBR + sign\_ext(d) により実効アドレスを計算する。
+  分岐命令ではPC + sign\_ext(d) により分岐先アドレスを計算する。
+
+\item \textbf{p4 — 主記憶アクセス / 入出力 (MA)}:
+  LD命令ではDRの値をアドレスとして主記憶を読み出し、MDRに格納する。
+  ST命令ではARの値（\texttt{r[Ra]}）をDRのアドレスに書き込む。
+  IN命令では外部入力をMDRに格納し、OUT命令ではARの値を外部出力する。
+
+\item \textbf{p5 — レジスタ書き込み (WB)}:
+  DRまたはMDRの値を、命令で指定されたレジスタに書き込む。
+  分岐命令ではDRの値をPCに書き込む。HLT命令では実行を停止する。
+\end{enumerate}
+
+\subsection{データパスの選択}
+
+各フェーズにおけるデータパスの選択を表\ref{tab:datapath}に示す。
+
+\begin{table}[h]
+\centering
+\caption{命令種別ごとのデータパス}
+\label{tab:datapath}
+\small
+\begin{tabular}{l|cc|ccc|c|cc}
+\toprule
+命令 & \multicolumn{2}{c|}{p2} & \multicolumn{3}{c|}{p3} & p4 & \multicolumn{2}{c}{p5} \\
+     & AR & BR & ALU入力A & ALU入力B & 結果 & 動作 & 書込先 & データ \\
+\midrule
+ALU  & r[Rs] & r[Rd] & BR & AR & DR & --- & r[Rd] & DR \\
+CMP  & r[Rs] & r[Rd] & BR & AR & --- & --- & --- & --- \\
+Shift& ---   & r[Rd] & ---& --- & DR & --- & r[Rd] & DR \\
+LD   & r[Ra] & r[Rb] & BR & sext(d) & DR & MDR$\leftarrow$mem[DR] & r[Ra] & MDR \\
+ST   & r[Ra] & r[Rb] & BR & sext(d) & DR & mem[DR]$\leftarrow$AR & --- & --- \\
+LI   & ---   & ---   & 0  & sext(d) & DR & --- & r[Rb] & DR \\
+B    & ---   & ---   & PC & sext(d) & DR & --- & PC & DR \\
+Bcc  & ---   & ---   & PC & sext(d) & DR & --- & PC/--- & DR \\
+IN   & ---   & ---   & ---& ---     & ---& MDR$\leftarrow$input & r[Rd] & MDR \\
+OUT  & r[Rs] & ---   & ---& ---     & ---& output$\leftarrow$AR & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{制御信号}
+
+制御部はフェーズカウンタ（3ビット、0〜4を巡回）と命令デコード結果に基づき、
+以下の制御を行う。
+
+\begin{itemize}
+\item \textbf{メモリアドレス選択}: p1ではPC、p4ではDR
+\item \textbf{メモリ書き込み許可}: p4かつST命令のときのみ有効
+\item \textbf{レジスタ書き込み}: p5かつ書き込みを伴う命令（ALU/Shift/LD/LI/IN）のとき有効。
+  書き込み先はLD命令では\texttt{I[13:11]}（Ra）、その他では\texttt{I[10:8]}（Rd/Rb）。
+\item \textbf{exec制御}: execの立ち上がりエッジで実行開始、HLT命令で停止
+\end{itemize}
+
+
+% ===================== 4. モジュール設計 =====================
+\section{モジュール設計}
+
+\subsection{モジュール構成}
+
+\begin{table}[h]
+\centering
+\caption{モジュール一覧}
+\label{tab:modules}
+\begin{tabular}{llp{8cm}}
+\toprule
+ファイル & モジュール名 & 機能 \\
+\midrule
+\texttt{alu.v}        & \texttt{alu}        & 算術論理演算ユニット。ADD/SUB/AND/OR/XOR/CMP/MOV の7演算と条件コード生成。 \\
+\texttt{shifter.v}    & \texttt{shifter}    & バレルシフタ。SLL/SLR/SRL/SRA の4種シフトと条件コードC生成。 \\
+\texttt{regfile.v}    & \texttt{regfile}    & 8$\times$16ビットレジスタファイル。非同期2リード、同期1ライト。 \\
+\texttt{simple\_cpu.v} & \texttt{simple\_cpu} & CPUコア。5フェーズFSM、命令デコード、データパス制御。 \\
+\texttt{mem.v}        & \texttt{mem}        & 主記憶。非同期リード、同期ライト。\texttt{\$readmemh}で初期化。 \\
+\texttt{simple\_top.v} & \texttt{simple\_top} & トップモジュール。CPU+メモリ+7セグ表示+I/O接続。 \\
+\texttt{seg7dec.v}    & \texttt{seg7dec}    & 7セグメントデコーダ（導入課題から流用）。 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{ALU (\texttt{alu.v})}
+
+16ビット2入力のALUで、加算・減算・論理演算・比較・転送の7演算を行う。
+減算は2の補数加算（\texttt{a + \~{}b + 1}）で実装し、
+CMP は SUB と同じ演算でフラグのみ設定する。
+
+\lstinputlisting[caption={alu.v},label={lst:alu}]{alu.v}
+
+\subsubsection{条件コード生成}
+
+\begin{itemize}
+\item \textbf{S}: 演算結果の最上位ビット（\texttt{result[15]}）
+\item \textbf{Z}: 演算結果が0なら1
+\item \textbf{C}: ADD では17ビット加算の桁上げ、SUB/CMP では2の補数加算の桁上げ
+  （\texttt{a $\geq$ b} のとき1）。論理演算・MOV では0。
+\item \textbf{V}: ADD/SUB/CMP のみ。符号付きオーバーフロー検出。
+  \texttt{(同符号の入力) $\wedge$ (結果の符号が異なる)} で判定。
+\end{itemize}
+
+\subsection{シフタ (\texttt{shifter.v})}
+
+16ビットデータを0〜15ビットシフトするバレルシフタ。
+4種のシフト演算に対応する。
+
+\lstinputlisting[caption={shifter.v},label={lst:shifter}]{shifter.v}
+
+条件コードCは、シフト桁数が0またはSLR（循環シフト）の場合は0、
+それ以外では最後にシフトアウトされたビットの値が設定される。
+Vは常に0。
+
+\subsection{レジスタファイル (\texttt{regfile.v})}
+
+8本の16ビット汎用レジスタを提供する。
+2つの読み出しポート（非同期、組み合わせ回路）と1つの書き込みポート（同期）を持つ。
+
+\lstinputlisting[caption={regfile.v},label={lst:regfile}]{regfile.v}
+
+非同期リードにより、p2でレジスタ値が即座にAR/BRに供給される。
+書き込みはp5で\texttt{rf\_we}が有効な間にクロックエッジで実行される。
+
+\subsection{主記憶 (\texttt{mem.v})}
+
+\lstinputlisting[caption={mem.v},label={lst:mem}]{mem.v}
+
+非同期リード（\texttt{assign}文）と同期ライト（\texttt{always @(posedge clk)}）を持つ。
+FPGA上ではDistributed RAMとして実装される。
+\texttt{\$readmemh}によりプログラムを初期化する。
+アドレス幅はパラメータで変更可能（デフォルト8ビット = 256語）。
+
+\subsection{CPUコア (\texttt{simple\_cpu.v})}
+
+SIMPLE/Bの全制御を行うモジュール。
+フェーズカウンタによるFSMとデータパス制御を含む。
+
+\lstinputlisting[caption={simple\_cpu.v},label={lst:cpu}]{simple_cpu.v}
+
+\subsubsection{命令デコード}
+
+IRの上位2ビット（\texttt{op1}）で命令形式を判別し、
+演算命令では\texttt{op3}フィールドで具体的な演算を特定する。
+デコード結果は組み合わせ回路として生成され、
+各フェーズの制御に使用される。
+
+\subsubsection{ALU入力マルチプレクサ}
+
+ALU入力Aは命令種別に応じて以下から選択される:
+\begin{itemize}
+\item ALU演算・LD/ST: BR（\texttt{r[Rd]}または\texttt{r[Rb]}）
+\item LI: 定数0（即値をそのまま通すため）
+\item B/Bcc: PC（分岐先アドレス計算のため）
+\end{itemize}
+
+ALU入力Bは:
+\begin{itemize}
+\item ALU演算: AR（\texttt{r[Rs]}）
+\item LD/ST/LI/B/Bcc: \texttt{sign\_ext(d8)}（8ビット即値/変位の符号拡張）
+\end{itemize}
+
+\subsubsection{レジスタ書き込み制御}
+
+書き込みイネーブル信号\texttt{rf\_we}は組み合わせ論理として生成される。
+これにより、p5のフェーズ中に\texttt{rf\_we = 1}となり、
+p5$\rightarrow$p1のクロックエッジでレジスタファイルへの書き込みが実行される。
+
+\subsection{トップモジュール (\texttt{simple\_top.v})}
+
+CPU、メモリ、7セグメント表示を統合するトップモジュール。
+OUT命令で出力された16ビット値をラッチし、
+ダイナミック点灯により4桁の16進数として7セグメントLEDに表示する。
+
+\lstinputlisting[caption={simple\_top.v},label={lst:top}]{simple_top.v}
+
+
+% ===================== 5. テストプログラム =====================
+\section{テストプログラム}
+
+\subsection{基本テスト: 加算と出力}
+
+最も単純なテストとして、即値ロード・加算・出力・停止を行うプログラムを使用した。
+
+\begin{table}[h]
+\centering
+\caption{基本テストプログラム}
+\label{tab:test_basic}
+\begin{tabular}{cclll}
+\toprule
+アドレス & 機械語 & ニーモニック & 動作 & 期待値 \\
+\midrule
+0 & \texttt{0x8003} & \texttt{LI r0, 3}   & \texttt{r[0] = 3}        & r0 = 3 \\
+1 & \texttt{0x8105} & \texttt{LI r1, 5}   & \texttt{r[1] = 5}        & r1 = 5 \\
+2 & \texttt{0xC800} & \texttt{ADD r0, r1} & \texttt{r[0] = r[0] + r[1]} & r0 = 8 \\
+3 & \texttt{0xC0D0} & \texttt{OUT r0}     & \texttt{output = r[0]}   & OUT = 8 \\
+4 & \texttt{0xC0F0} & \texttt{HLT}        & 停止                     & halted \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{応用テスト: 遅延付きカウンタ}
+
+実機デモ用として、遅延ループ付きのインクリメントカウンタを作成した。
+内側ループ（65,536回 $\times$ 2命令）$\times$ 外側ループ（10回）で約0.3秒の遅延を実現し、
+カウンタ値をOUT命令で7セグメントLEDに出力する。
+
+\begin{table}[h]
+\centering
+\caption{遅延付きカウンタプログラム}
+\label{tab:test_counter}
+\small
+\begin{tabular}{ccll}
+\toprule
+アドレス & 機械語 & ニーモニック & 動作 \\
+\midrule
+0  & \texttt{0x8000} & \texttt{LI r0, 0}    & カウンタ初期化 \\
+1  & \texttt{0x8101} & \texttt{LI r1, 1}    & インクリメント値 \\
+2  & \texttt{0x840A} & \texttt{LI r4, 10}   & 外側ループ回数 \\
+3  & \texttt{0xC800} & \texttt{ADD r0, r1}  & r0++ \\
+4  & \texttt{0xC0D0} & \texttt{OUT r0}      & 出力 \\
+5  & \texttt{0x8300} & \texttt{LI r3, 0}    & 外側カウンタ初期化 \\
+6  & \texttt{0x8200} & \texttt{LI r2, 0}    & 内側カウンタ初期化 \\
+7  & \texttt{0xCA00} & \texttt{ADD r2, r1}  & r2++ \\
+8  & \texttt{0xBBFE} & \texttt{BNE -2}      & r2$\neq$0なら addr 7 へ \\
+9  & \texttt{0xCB00} & \texttt{ADD r3, r1}  & r3++ \\
+10 & \texttt{0xE350} & \texttt{CMP r3, r4}  & r3 と 10 を比較 \\
+11 & \texttt{0xB9FA} & \texttt{BLT -6}      & r3 $<$ 10 なら addr 6 へ \\
+12 & \texttt{0xA0F6} & \texttt{B -10}       & addr 3 へ戻る \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsubsection{遅延時間の計算}
+
+1命令あたり5クロックサイクル、クロック周波数20MHzで計算する。
+
+\begin{itemize}
+\item 内側ループ: $65{,}536 \times 2 \times 5 = 655{,}360$ サイクル
+\item 外側ループ: $10 \times (655{,}360 + \alpha) \approx 6{,}600{,}000$ サイクル
+\item 所要時間: $6{,}600{,}000 \div 20{,}000{,}000 \approx 0.33$ 秒/カウント
+\end{itemize}
+
+約3回/秒のペースでカウンタが更新され、7セグメントLEDで目視確認可能な速度となる。
+
+
+% ===================== 6. 動作検証 =====================
+\section{動作検証}
+
+\subsection{テストベンチ}
+
+\lstinputlisting[caption={simple\_tb.v --- テストベンチ},label={lst:tb}]{simple_tb.v}
+
+テストベンチはCPUとメモリをインスタンス化し、
+基本テストプログラムを内部メモリに格納して実行する。
+OUT命令の出力を\texttt{\$display}で監視し、
+HLTによる停止をhalted信号で検出する。
+
+\subsection{シミュレーション結果}
+
+Icarus Verilog 11.0 によるシミュレーション結果を以下に示す。
+
+\begin{lstlisting}[language={},frame=single,caption={シミュレーション出力}]
+--- Execution Start ---
+Time 1225000: OUT = 0008 (8)
+--- CPU Halted (PC=0005) ---
+\end{lstlisting}
+
+\subsubsection{結果の検証}
+
+\begin{itemize}
+\item \textbf{OUT = 0008}: LI r0,3 + LI r1,5 + ADD r0,r1 = 3 + 5 = 8。期待通りの結果。
+\item \textbf{PC = 0005}: HLT命令（アドレス4）の実行後、PCは4+1=5。正しい値。
+\item \textbf{タイミング}: 5命令 $\times$ 5フェーズ $\times$ 50ns/サイクル = 1,250ns。
+  出力タイミング（Time 1225000ps = 1,225ns）はリセット解除後の遅延とexec検出を
+  考慮すると妥当。
+\end{itemize}
+
+\subsection{命令実行トレース}
+
+各命令のフェーズごとの動作を表\ref{tab:trace}にまとめる。
+
+\begin{table}[h]
+\centering
+\caption{命令実行トレース}
+\label{tab:trace}
+\small
+\begin{tabular}{l|l|l}
+\toprule
+命令 & フェーズ & 主要な動作 \\
+\midrule
+\texttt{LI r0, 3} & p1 & IR$\leftarrow$0x8003, PC$\leftarrow$1 \\
+                   & p3 & DR$\leftarrow$ALU(0, sext(3), ADD) = 3 \\
+                   & p5 & r[0]$\leftarrow$DR = 3 \\
+\midrule
+\texttt{LI r1, 5} & p1 & IR$\leftarrow$0x8105, PC$\leftarrow$2 \\
+                   & p3 & DR$\leftarrow$ALU(0, sext(5), ADD) = 5 \\
+                   & p5 & r[1]$\leftarrow$DR = 5 \\
+\midrule
+\texttt{ADD r0, r1} & p1 & IR$\leftarrow$0xC800, PC$\leftarrow$3 \\
+                     & p2 & AR$\leftarrow$r[1]=5, BR$\leftarrow$r[0]=3 \\
+                     & p3 & DR$\leftarrow$ALU(3, 5, ADD) = 8; S=0, Z=0, C=0, V=0 \\
+                     & p5 & r[0]$\leftarrow$DR = 8 \\
+\midrule
+\texttt{OUT r0}    & p2 & AR$\leftarrow$r[0]=8 \\
+                   & p4 & output$\leftarrow$AR = 8 \\
+\midrule
+\texttt{HLT}       & p5 & running$\leftarrow$0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+% ===================== 7. 性能評価 =====================
+\section{性能評価}
+
+\subsection{命令実行サイクル数}
+
+SIMPLE/Bでは全命令が5サイクルで実行される。
+20MHzクロックでは1命令あたり250nsであり、
+スループットは4 MIPS (Million Instructions Per Second) となる。
+
+\subsection{回路規模の見積もり}
+
+\begin{itemize}
+\item \textbf{レジスタファイル}: 8 $\times$ 16 = 128ビットのフリップフロップ
+\item \textbf{ALU}: 16ビット加算器 $\times$ 1、各種論理演算のマルチプレクサ
+\item \textbf{シフタ}: 16ビットバレルシフタ（4段マルチプレクサ）
+\item \textbf{制御部}: フェーズカウンタ（3ビット）、命令デコーダ（組み合わせ回路）
+\item \textbf{内部レジスタ}: PC, IR, AR, BR, DR, MDR（各16ビット） + SZCV（4ビット）
+\item \textbf{主記憶}: 256語 $\times$ 16ビット = 4,096ビット（Distributed RAM）
+\end{itemize}
+
+Quartus Primeでのコンパイル後、Fitter $\rightarrow$ Summary で
+具体的なLE数を確認すること。
+
+\subsection{最大動作周波数}
+
+クリティカルパスは以下の経路が候補となる:
+\begin{itemize}
+\item p1: PC $\rightarrow$ メモリアドレス $\rightarrow$ メモリ読み出し $\rightarrow$ IR ラッチ
+\item p3: BR/AR $\rightarrow$ ALU演算 $\rightarrow$ DR ラッチ
+\item p4: DR $\rightarrow$ メモリアドレス $\rightarrow$ メモリ読み出し $\rightarrow$ MDR ラッチ
+\end{itemize}
+
+非同期リードメモリ（Distributed RAM）を使用しているため、
+メモリアクセスを含むパスが最も長くなる可能性が高い。
+Timing Analyzer で Fmax を確認し、20MHz 以上であることを確認すること。
+
+\subsection{改良の方向性}
+
+SIMPLE/B は最も基本的な設計であり、以下の改良が考えられる。
+
+\begin{itemize}
+\item \textbf{フェーズの並列実行}: p1/p5の並列実行で4サイクル化、
+  さらにp1/p3とp2/p5の並列実行で3サイクル化が可能。
+\item \textbf{パイプライン化}: 全フェーズを並列実行し、
+  理想的には1サイクル/命令（5倍の性能向上）を目指す。
+  データハザードやコントロールハザードの対策が必要。
+\item \textbf{Block RAMの利用}: 同期リードのBlock RAMに切り替えることで、
+  より大きなメモリ空間を使用可能。ただしメモリアクセスのタイミング調整が必要。
+\end{itemize}
+
+
+% ===================== 8. まとめ =====================
+\section{まとめ}
+
+本レポートでは、SIMPLEアーキテクチャに準拠した16ビットプロセッサ SIMPLE/B を
+Verilog HDL で設計・実装し、シミュレーションにより動作を検証した。
+
+\begin{itemize}
+\item 5フェーズ順次実行方式（IF $\rightarrow$ RR $\rightarrow$ EX $\rightarrow$ MA $\rightarrow$ WB）により、
+  全命令を統一的に5サイクルで実行する構成とした。
+\item ALU（7演算+フラグ生成）、バレルシフタ（4種シフト）、
+  レジスタファイル（8$\times$16ビット）を独立モジュールとして設計し、
+  CPUコアから接続する階層構造とした。
+\item 基本テストプログラム（LI/ADD/OUT/HLT）のシミュレーションにより、
+  即値ロード・加算・出力・停止の正常動作を確認した（OUT = 8）。
+\item 遅延付きカウンタプログラムにより、LD/ST以外の主要命令（LI, ADD, CMP,
+  B, BNE, BLT, OUT）の動作を検証可能とした。
+\end{itemize}
+
+今後は実機（MU500-RK）への実装と動作確認、
+およびパイプライン化等のマイクロアーキテクチャ改良を進める予定である。
+
+\end{document}
